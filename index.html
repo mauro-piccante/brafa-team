@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Equipos 5v5 — Generador equilibrado</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-50 text-slate-900">
@@ -14,6 +15,7 @@
         <button id="openFormBtn" class="px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm">Nuevo jugador</button>
         <button id="pickDirBtn" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm">Elegir carpeta de fichas</button>
         <button id="exportStateBtn" class="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm">Exportar estado</button>
+        <button id="testOnlineBtn" class="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm">Probar online</button>
         <label class="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm cursor-pointer">
           Importar estado
           <input id="importStateInput" type="file" accept="application/json" class="hidden">
@@ -315,6 +317,17 @@
   </div>
 
 <script>
+// --- SUPABASE CONFIG ---
+const SUPABASE_URL = "https://rfbnkbicsuqfjcznscit.supabase.co"; 
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmYm5rYmljc3VxZmpjem5zY2l0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3NTkwNDMsImV4cCI6MjA3NTMzNTA0M30.HfdI37LfvMtKlkU5MpvE6qzAyyO1-Gt9fR45uxPko5c";
+const SUPABASE_BUCKET = "fichas";
+
+let supa = null;
+try {
+  if (window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY) {
+    supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+} catch {}
 /* ---------- Estado & utilidad ---------- */
 const STORAGE_KEY = 'futbol_app_state_v1';
 let state = loadState();
@@ -648,18 +661,41 @@ form.addEventListener('submit', async (e)=>{
 
   saveState(); renderAll(); hideForm();
 
-  const ficha = buildFichaJSON(player);
+const ficha = buildFichaJSON(player);
+try {
+  if (supa) {
+    await writeFichaOnline(player, ficha);                 // 1) subir online
+  } else if (fichasDirHandle && (await verifyDirPermission(fichasDirHandle))) {
+    await writeFichaToDir(fichasDirHandle, player, ficha); // 2) carpeta local (si diste permiso)
+  } else {
+    downloadText(JSON.stringify(ficha, null, 2), fichaFileName(player), 'application/json'); // 3) descarga
+  }
+} catch (err) {
+  console.warn('Fallo subida online; hago fallback local/descarga:', err);
   try {
     if (fichasDirHandle && (await verifyDirPermission(fichasDirHandle))) {
       await writeFichaToDir(fichasDirHandle, player, ficha);
     } else {
       downloadText(JSON.stringify(ficha, null, 2), fichaFileName(player), 'application/json');
     }
-  } catch (err) {
-    console.warn('No se pudo escribir en carpeta, descargo ficha:', err);
-    downloadText(JSON.stringify(ficha, null, 2), fichaFileName(player), 'application/json');
+  } catch (e2) {
+    console.error('No se pudo guardar la ficha ni online ni local:', e2);
+    alert('No se pudo guardar la ficha online ni local. Revisa Supabase o permisos de carpeta.');
   }
-});
+};
+
+  // --- Guardar ficha online en Supabase ---
+async function writeFichaOnline(p, ficha){
+  if(!supa) return false; // si no hay cliente supabase, no hacemos nada
+  const path = `${p.id}/${fichaFileName(p)}`;
+  const blob = new Blob([JSON.stringify(ficha, null, 2)], { type: 'application/json' });
+  const { error } = await supa
+    .storage
+    .from(SUPABASE_BUCKET)
+    .upload(path, blob, { upsert: true, contentType: 'application/json' });
+  if (error) throw error;
+  return true;
+}
 
 deleteBtn.addEventListener('click', ()=>{
   const id = form.elements.editingId.value; if(!id) return;
@@ -855,6 +891,16 @@ document.getElementById('importStateInput').addEventListener('change', async (e)
 
 /* ---------- Init ---------- */
 renderAll();
+  const testOnlineBtn = document.getElementById('testOnlineBtn');
+if (testOnlineBtn) testOnlineBtn.addEventListener('click', async ()=>{
+  if(!supa){ alert('Configura SUPABASE_URL y SUPABASE_ANON_KEY.'); return; }
+  try{
+    const ping = new Blob([JSON.stringify({ ping: Date.now() })], { type: 'application/json' });
+    const { error } = await supa.storage.from(SUPABASE_BUCKET).upload(`__ping__/ping.json`, ping, { upsert: true, contentType: 'application/json' });
+    if (error) throw error;
+    alert('Conexión online OK. Bucket accesible.');
+  }catch(err){ alert('Fallo de conexión o bucket: '+ err.message); }
+});
 </script>
 </body>
 </html>
