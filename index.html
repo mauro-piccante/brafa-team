@@ -660,49 +660,96 @@ form.addEventListener('submit', async (e)=>{
   }
 
   saveState(); renderAll(); hideForm();
-  const ficha = buildFichaJSON(player);
   try {
+    const persistResult = await persistFicha(player);
+    // guardamos de nuevo por si persistFicha añadió metadatos (remotePath, etc.)
+    saveState();
     if (supa) {
-      await writeFichaOnline(player, ficha);                 // 1) subir online
-    } else if (fichasDirHandle && (await verifyDirPermission(fichasDirHandle))) {
-      await writeFichaToDir(fichasDirHandle, player, ficha); // 2) carpeta local (si diste permiso)
-    } else {
-      downloadText(JSON.stringify(ficha, null, 2), fichaFileName(player), 'application/json'); // 3) descarga
+      await syncPlayersFromSupabase({ silent: true });
+    }
+    if (persistResult.warning) {
+      alert(persistResult.warning);
     }
   } catch (err) {
-    console.warn('Fallo subida online; hago fallback local/descarga:', err);
-    try {
-      if (fichasDirHandle && (await verifyDirPermission(fichasDirHandle))) {
-        await writeFichaToDir(fichasDirHandle, player, ficha);
-      } else {
-        downloadText(JSON.stringify(ficha, null, 2), fichaFileName(player), 'application/json');
-      }
-    } catch (e2) {
-      console.error('No se pudo guardar la ficha ni online ni local:', e2);
-      alert('No se pudo guardar la ficha online ni local. Revisa Supabase o permisos de carpeta.');
-    }
+    console.error('No se pudo guardar la ficha en Supabase ni localmente:', err);
+    alert('Jugador guardado solo en este dispositivo. La sincronización con Supabase falló.');
   }
 });
 
   // --- Guardar ficha online en Supabase ---
 async function writeFichaOnline(p, ficha){
-  if(!supa) return false; // si no hay cliente supabase, no hacemos nada
-  const path = `${p.id}/${fichaFileName(p)}`;
+  if(!supa) return null; // si no hay cliente supabase, no hacemos nada
+  const path = p.remotePath || `${p.id}/${fichaFileName(p)}`;
   const blob = new Blob([JSON.stringify(ficha, null, 2)], { type: 'application/json' });
   const { error } = await supa
     .storage
     .from(SUPABASE_BUCKET)
     .upload(path, blob, { upsert: true, contentType: 'application/json' });
   if (error) throw error;
+  return path;
+}
+
+async function persistFicha(player){
+  const ficha = buildFichaJSON(player);
+  if (supa) {
+    try {
+      const remotePath = await writeFichaOnline(player, ficha);
+      if (remotePath) player.remotePath = remotePath;
+      return { remote: true };
+    } catch (err) {
+      console.warn('Fallo subida online; intento carpeta local si existe.', err);
+      if (fichasDirHandle && (await verifyDirPermission(fichasDirHandle))) {
+        await writeFichaToDir(fichasDirHandle, player, ficha);
+        return {
+          remote: false,
+          savedToDir: true,
+          warning: 'Supabase no respondió. Se guardó el jugador en la carpeta local autorizada.'
+        };
+      }
+      throw err;
+    }
+  }
+  if (fichasDirHandle && (await verifyDirPermission(fichasDirHandle))) {
+    await writeFichaToDir(fichasDirHandle, player, ficha);
+    return { remote: false, savedToDir: true };
+  }
+  return {
+    remote: false,
+    localOnly: true,
+    warning: 'Supabase no está configurado. El jugador queda guardado solo en este dispositivo.'
+  };
+}
+
+async function deleteFichaOnline(player){
+  if(!supa || !player) return false;
+  const path = player.remotePath || `${player.id}/${fichaFileName(player)}`;
+  const { error } = await supa
+    .storage
+    .from(SUPABASE_BUCKET)
+    .remove([path]);
+  if (error) throw error;
   return true;
 }
 
-deleteBtn.addEventListener('click', ()=>{
+deleteBtn.addEventListener('click', async ()=>{
   const id = form.elements.editingId.value; if(!id) return;
   if(!confirm('¿Eliminar este jugador?')) return;
+  const player = state.players.find(x=> x.id===id);
   state.players = state.players.filter(x=> x.id!==id);
   state.apuntados = state.apuntados.filter(x=> x!==id);
   saveState(); renderAll(); hideForm();
+  if (player) {
+    try {
+      await deleteFichaOnline(player);
+      saveState();
+      if (supa) {
+        await syncPlayersFromSupabase({ silent: true });
+      }
+    } catch (err) {
+      console.error('No se pudo eliminar la ficha en Supabase:', err);
+      alert('El jugador se eliminó localmente, pero Supabase no está accesible ahora mismo.');
+    }
+  }
 });
 
 /* ---------- Fichas archivo ---------- */
@@ -733,6 +780,119 @@ function downloadText(text, filename, mime='text/plain'){
   const blob=new Blob([text],{type:mime}); const url=URL.createObjectURL(blob);
   const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click();
   a.remove(); URL.revokeObjectURL(url);
+}
+
+async function listAllBucketFiles(prefix=''){
+  if (!supa) return [];
+  const { data, error } = await supa
+    .storage
+    .from(SUPABASE_BUCKET)
+    .list(prefix, { limit: 1000 });
+  if (error) throw error;
+  const files = [];
+  for (const entry of data || []) {
+    const isFile = entry.metadata && typeof entry.metadata === 'object';
+    const fullPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (!isFile) {
+      if (fullPath === '__ping__') continue;
+      const nested = await listAllBucketFiles(fullPath);
+      files.push(...nested);
+    } else {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+function playerFromFicha(ficha){
+  if (!ficha || typeof ficha !== 'object') return null;
+  const niveles = ficha.niveles || {};
+  const numOrNull = (value)=>{
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  };
+  const takeNivel = (primary, fallback)=> numOrNull(primary ?? fallback);
+  const nacimiento = numOrNull(ficha.anio_nacimiento ?? ficha.nacimiento);
+  const peso = numOrNull(ficha.peso_kg ?? ficha.peso);
+  const altura = numOrNull(ficha.altura_cm ?? ficha.altura);
+  const player = {
+    id: ficha.id || ficha.uuid || ficha.identifier || null,
+    createdAt: ficha.creado || ficha.createdAt || ficha.created_at || new Date().toISOString(),
+    nombre: ficha.nombre || '',
+    apellido: ficha.apellido || '',
+    nacimiento: nacimiento ?? '',
+    peso: peso ?? '',
+    altura: altura ?? '',
+    disparo: takeNivel(niveles.disparo, ficha.disparo),
+    tecnica: takeNivel(niveles.tecnica, ficha.tecnica),
+    velocidad: takeNivel(niveles.velocidad, ficha.velocidad),
+    resistencia: takeNivel(niveles.resistencia, ficha.resistencia),
+    sacrificio: takeNivel(niveles.sacrificio, ficha.sacrificio),
+    fisico: takeNivel(niveles.fisico, ficha.fisico)
+  };
+  if (!player.id) return null;
+  for (const key of PARAM_KEYS) {
+    player[key] = clampStatValue(player[key], 50);
+  }
+  return player;
+}
+
+async function fetchPlayersFromSupabase(){
+  if (!supa) return [];
+  const files = await listAllBucketFiles('');
+  const byId = new Map();
+  for (const path of files) {
+    if (!path.endsWith('.json')) continue;
+    try {
+      const { data, error } = await supa.storage.from(SUPABASE_BUCKET).download(path);
+      if (error) throw error;
+      const text = await data.text();
+      const json = JSON.parse(text);
+      const player = playerFromFicha(json);
+      if (player) {
+        player.remotePath = path;
+        byId.set(player.id, player);
+      }
+    } catch (err) {
+      console.error('No se pudo cargar ficha desde Supabase:', path, err);
+    }
+  }
+  const players = Array.from(byId.values());
+  players.sort((a,b)=> a.apellido.localeCompare(b.apellido)||a.nombre.localeCompare(b.nombre));
+  return players;
+}
+
+async function syncPlayersFromSupabase(options = {}){
+  const { silent = false } = options;
+  if (!supa) return;
+  try {
+    const remotePlayers = await fetchPlayersFromSupabase();
+    if (!remotePlayers) return;
+    if (!remotePlayers.length) {
+      if (!state.players.length) {
+        state.players = [];
+        state.apuntados = [];
+        saveState();
+        renderAll();
+      }
+      return;
+    }
+    const remoteIds = new Set(remotePlayers.map(p=>p.id));
+    state.players = remotePlayers;
+    state.apuntados = state.apuntados.filter(id => remoteIds.has(id));
+    saveState();
+    renderAll();
+  } catch (err) {
+    console.error('No se pudo sincronizar jugadores desde Supabase:', err);
+    if (!silent) {
+      alert('No se pudieron cargar los jugadores desde Supabase. Revisa la conexión.');
+    }
+  }
+}
+
+async function initializeRemoteSync(){
+  if (!supa) return;
+  await syncPlayersFromSupabase({ silent: true });
 }
 
 /* ---------- Render: registrados / apuntados / equipos ---------- */
@@ -891,7 +1051,8 @@ document.getElementById('importStateInput').addEventListener('change', async (e)
 
 /* ---------- Init ---------- */
 renderAll();
-  const testOnlineBtn = document.getElementById('testOnlineBtn');
+initializeRemoteSync();
+const testOnlineBtn = document.getElementById('testOnlineBtn');
 if (testOnlineBtn) testOnlineBtn.addEventListener('click', async ()=>{
   if(!supa){ alert('Configura SUPABASE_URL y SUPABASE_ANON_KEY.'); return; }
   try{
