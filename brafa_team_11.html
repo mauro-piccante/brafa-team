@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Equipos 5v5 — Generador equilibrado</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <div class="w-full max-w-none mx-auto p-4 md:p-6 space-y-6 md:min-h-screen">
+    <header class="flex items-center justify-between">
+      <h1 class="text-2xl font-semibold tracking-tight">Generador de equipos 5v5</h1>
+      <div class="flex gap-2">
+        <button id="openFormBtn" class="px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm">Nuevo jugador</button>
+        <button id="pickDirBtn" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm">Elegir carpeta de fichas</button>
+        <button id="exportStateBtn" class="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm">Exportar estado</button>
+        <label class="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm cursor-pointer">
+          Importar estado
+          <input id="importStateInput" type="file" accept="application/json" class="hidden">
+        </label>
+      </div>
+    </header>
+
+    <p class="text-xs text-slate-600">
+      Escala de nivel (0–100): <b>0</b> = <i>Incapaz</i> · <b>100</b> = <i>Dios</i>.
+    </p>
+
+    <!-- barra acciones equipos -->
+    <div class="flex justify-end gap-2 mb-4">
+      <button id="makeTeamsBtn" class="px-4 py-2 rounded-xl bg-indigo-600 text-white">Crear equipos</button>
+      <button id="shuffleTeamsBtn" class="px-4 py-2 rounded-xl bg-white border border-slate-200">Otra versión</button>
+    </div>
+
+    <!-- layout 4 columnas desde tablet -->
+    <section id="layout4col" class="grid grid-cols-1 md:grid-cols-4 md:gap-6 md:h-[calc(100vh-160px)]">
+      <!-- Registrados -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 md:h-full md:overflow-auto">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-medium">Registrados</h2>
+          <input id="searchInput" placeholder="Buscar…" class="px-3 py-2 rounded-xl border border-slate-200 text-sm" />
+        </div>
+        <div id="playersGrid" class="grid grid-cols-1 gap-3"></div>
+        <p class="text-xs text-slate-500 mt-3">Arrastra una ficha a “Apuntados” o pulsa “Apuntar”. También puedes soltar aquí para devolver desde “Apuntados”.</p>
+      </div>
+
+      <!-- Apuntados -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 md:h-full md:overflow-auto">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-medium">Convocados</h2>
+          <button id="clearApuntadosBtn" class="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm">Vaciar</button>
+        </div>
+        <div id="apuntadosDrop" class="min-h-40 rounded-xl border-2 border-dashed border-slate-300 p-3 grid grid-cols-1 gap-3"></div>
+        <p class="text-xs text-slate-500 mt-3">Necesitas exactamente 10 para generar dos equipos.</p>
+      </div>
+
+      <!-- Equipo A -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 md:h-full md:overflow-auto">
+        <div class="flex items-center justify-between mb-3 gap-3">
+          <h2 class="text-lg font-medium">Blanco</h2>
+          <div id="teamARadar" class="w-16 h-16 shrink-0"></div>
+        </div>
+        <div id="teamA" class="grid grid-cols-1 gap-3"></div>
+        <p id="sumA" class="mt-3 text-xs text-slate-500"></p>
+      </div>
+
+      <!-- Equipo B -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 md:h-full md:overflow-auto">
+        <div class="flex items-center justify-between mb-3 gap-3">
+          <h2 class="text-lg font-medium">Peto</h2>
+          <div id="teamBRadar" class="w-16 h-16 shrink-0"></div>
+        </div>
+        <div id="teamB" class="grid grid-cols-1 gap-3"></div>
+        <p id="sumB" class="mt-3 text-xs text-slate-500"></p>
+      </div>
+    </section>
+  </div>
+
+  <!-- MODAL NUEVO/EDITAR JUGADOR (radar solo aquí) -->
+  <div id="formModal" class="fixed inset-0 hidden items-center justify-center bg-black/40 p-4 z-50 overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-lg max-h-[calc(100vh-3rem)] overflow-y-auto">
+      <div class="flex items-center justify-between mb-3">
+        <h3 id="formTitle" class="text-lg font-semibold">Registrar nuevo jugador</h3>
+        <button id="closeFormBtn" class="text-slate-500">✕</button>
+      </div>
+
+      <form id="playerForm" class="grid md:grid-cols-2 gap-6">
+        <input type="hidden" name="editingId" />
+
+        <!-- Columna izquierda: datos + sliders -->
+        <div class="space-y-4">
+          <div class="grid grid-cols-2 gap-4">
+            <input required name="nombre" placeholder="Nombre" class="w-full px-3 py-2 rounded-xl border border-slate-200" />
+            <input required name="apellido" placeholder="Apellido" class="w-full px-3 py-2 rounded-xl border border-slate-200" />
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <input required name="nacimiento" type="number" min="1940" max="2100" placeholder="Año de nacimiento" class="w-full px-3 py-2 rounded-xl border border-slate-200" />
+            <input name="edad_calc" type="text" placeholder="Edad" disabled class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50" />
+            <div></div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <input required name="peso" type="number" min="20" max="200" step="0.1" placeholder="Peso (kg)" class="w-full px-3 py-2 rounded-xl border border-slate-200" />
+            <input required name="altura" type="number" min="120" max="230" step="0.5" placeholder="Altura (cm)" class="w-full px-3 py-2 rounded-xl border border-slate-200" />
+          </div>
+
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 flex items-center justify-between gap-4">
+            <div>
+              <p class="text-xs uppercase tracking-[0.3em] text-slate-500">Media</p>
+              <p id="formAverageValue" class="text-4xl font-semibold leading-none text-slate-900">50</p>
+            </div>
+            <div id="formMiniRadar" class="w-16 h-16 sm:w-20 sm:h-20"></div>
+          </div>
+
+          <!-- Sliders 0–100 (nuevos parámetros, con número y emoji) -->
+          <div class="space-y-4">
+            <div class="space-y-2">
+              <label class="block text-sm">Disparo (0–100) ⚽</label>
+              <div class="flex items-center gap-3">
+                <input required name="disparo" type="range" min="0" max="100" value="50" class="flex-1" />
+                <input name="disparo_num" type="number" min="0" max="100" value="50" class="w-20 px-2 py-1 rounded-lg border border-slate-200 text-sm" />
+              </div>
+              <div class="mt-2 grid grid-cols-5 gap-2 text-[10px] text-slate-500 text-center">
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>0 · Incapaz</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>25 · Lerdo</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>50 · No destaca</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>75 · La toca</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>100 · Dios</span>
+                </div>
+              </div>
+              <p class="text-xs text-slate-500">Precisión y potencia del remate a portería.</p>
+            </div>
+            <div class="space-y-2">
+              <label class="block text-sm">Técnica (0–100) 🎯</label>
+              <div class="flex items-center gap-3">
+                <input required name="tecnica" type="range" min="0" max="100" value="50" class="flex-1" />
+                <input name="tecnica_num" type="number" min="0" max="100" value="50" class="w-20 px-2 py-1 rounded-lg border border-slate-200 text-sm" />
+              </div>
+              <div class="mt-2 grid grid-cols-5 gap-2 text-[10px] text-slate-500 text-center">
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>0 · Incapaz</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>25 · Lerdo</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>50 · No destaca</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>75 · La toca</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>100 · Dios</span>
+                </div>
+              </div>
+              <p class="text-xs text-slate-500">Control, regate y visión en espacios reducidos.</p>
+            </div>
+            <div class="space-y-2">
+              <label class="block text-sm">Velocidad (0–100) ⚡</label>
+              <div class="flex items-center gap-3">
+                <input required name="velocidad" type="range" min="0" max="100" value="50" class="flex-1" />
+                <input name="velocidad_num" type="number" min="0" max="100" value="50" class="w-20 px-2 py-1 rounded-lg border border-slate-200 text-sm" />
+              </div>
+              <div class="mt-2 grid grid-cols-5 gap-2 text-[10px] text-slate-500 text-center">
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>0 · Incapaz</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>25 · Lerdo</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>50 · No destaca</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>75 · La toca</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>100 · Dios</span>
+                </div>
+              </div>
+              <p class="text-xs text-slate-500">Aceleración y capacidad de ganar metros al rival.</p>
+            </div>
+            <div class="space-y-2">
+              <label class="block text-sm">Resistencia (0–100) 🫁</label>
+              <div class="flex items-center gap-3">
+                <input required name="resistencia" type="range" min="0" max="100" value="50" class="flex-1" />
+                <input name="resistencia_num" type="number" min="0" max="100" value="50" class="w-20 px-2 py-1 rounded-lg border border-slate-200 text-sm" />
+              </div>
+              <div class="mt-2 grid grid-cols-5 gap-2 text-[10px] text-slate-500 text-center">
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>0 · Incapaz</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>25 · Lerdo</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>50 · No destaca</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>75 · La toca</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>100 · Dios</span>
+                </div>
+              </div>
+              <p class="text-xs text-slate-500">Aguante físico y ritmo constante durante el partido.</p>
+            </div>
+            <div class="space-y-2">
+              <label class="block text-sm">Sacrificio (0–100) 🔥</label>
+              <div class="flex items-center gap-3">
+                <input required name="sacrificio" type="range" min="0" max="100" value="50" class="flex-1" />
+                <input name="sacrificio_num" type="number" min="0" max="100" value="50" class="w-20 px-2 py-1 rounded-lg border border-slate-200 text-sm" />
+              </div>
+              <div class="mt-2 grid grid-cols-5 gap-2 text-[10px] text-slate-500 text-center">
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>0 · Incapaz</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>25 · Lerdo</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>50 · No destaca</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>75 · La toca</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>100 · Dios</span>
+                </div>
+              </div>
+              <p class="text-xs text-slate-500">Compromiso defensivo y esfuerzo sin balón.</p>
+            </div>
+            <div class="space-y-2">
+              <label class="block text-sm">Físico (0–100) 💪</label>
+              <div class="flex items-center gap-3">
+                <input required name="fisico" type="range" min="0" max="100" value="50" class="flex-1" />
+                <input name="fisico_num" type="number" min="0" max="100" value="50" class="w-20 px-2 py-1 rounded-lg border border-slate-200 text-sm" />
+              </div>
+              <div class="mt-2 grid grid-cols-5 gap-2 text-[10px] text-slate-500 text-center">
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>0 · Incapaz</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>25 · Lerdo</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>50 · No destaca</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>75 · La toca</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                  <span class="h-2 w-px bg-slate-300"></span>
+                  <span>100 · Dios</span>
+                </div>
+              </div>
+              <p class="text-xs text-slate-500">Fortaleza en duelos, choques y juego aéreo.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Columna derecha: radar -->
+        <div class="hidden md:block">
+          <div id="radarBox" class="w-full"></div>
+        </div>
+
+        <div class="col-span-2 flex items-center justify-between">
+          <p class="text-xs text-slate-500">
+            Se guarda en LocalStorage y, si elegiste carpeta, se escribe/actualiza la ficha .json. Escala: 0 = <i>Incapaz</i>, 100 = <i>Dios</i>.
+          </p>
+          <div class="flex gap-2">
+            <button type="button" id="deletePlayerBtn" class="px-4 py-2 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hidden">Eliminar</button>
+            <button type="button" id="cancelFormBtn" class="px-4 py-2 rounded-xl bg-white border border-slate-200">Cancelar</button>
+            <button class="px-4 py-2 rounded-xl bg-emerald-600 text-white">Guardar</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+<script>
+/* ---------- Estado & utilidad ---------- */
+const STORAGE_KEY = 'futbol_app_state_v1';
+let state = loadState();
+let fichasDirHandle = null;
+const PARAM_KEYS = ['disparo','tecnica','velocidad','resistencia','sacrificio','fisico'];
+const PARAM_ICONS = {
+  disparo:'⚽',
+  tecnica:'🎯',
+  velocidad:'⚡',
+  resistencia:'🫁',
+  sacrificio:'🔥',
+  fisico:'💪'
+};
+const clampStatValue = (value, fallback = 50) => {
+  const num = Number(value);
+  if (Number.isFinite(num)) {
+    return Math.max(0, Math.min(100, num));
+  }
+  return fallback;
+};
+
+function loadState() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return { players: [], apuntados: [], lastSeed: Date.now() };
+  try { return JSON.parse(raw); } catch { return { players: [], apuntados: [], lastSeed: Date.now() }; }
+}
+function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function uuid(){ return 'xxxxxx'.replace(/x/g, ()=> (Math.random()*36|0).toString(36)); }
+
+function paramsObj(p){
+  const tieneNuevos = p.disparo!=null || p.fisico!=null;
+  const disparo = clampStatValue(tieneNuevos ? p.disparo : (p.vision ?? p.dribling ?? p.tecnica), 50);
+  const tecnica = clampStatValue(p.tecnica, 50);
+  const velocidad = clampStatValue(p.velocidad, 50);
+  const resistencia = clampStatValue(p.resistencia, 50);
+  const sacrificio = clampStatValue(p.sacrificio, 50);
+  let fisico;
+  if (p.fisico != null) {
+    fisico = clampStatValue(p.fisico, 50);
+  } else if (p.peso != null) {
+    const pesoNum = Number(p.peso);
+    fisico = Number.isFinite(pesoNum) ? Math.max(0, Math.min(100, Math.round(pesoNum))) : 50;
+  } else {
+    fisico = 50;
+  }
+  return {disparo, tecnica, velocidad, resistencia, sacrificio, fisico};
+}
+function averageParams(players){
+  if(!players || !players.length) return null;
+  const totals = PARAM_KEYS.reduce((acc,key)=>{ acc[key]=0; return acc; }, {});
+  players.forEach(p=>{
+    const pr = paramsObj(p);
+    PARAM_KEYS.forEach(key=>{ totals[key]+=pr[key]; });
+  });
+  const count = players.length;
+  PARAM_KEYS.forEach(key=>{ totals[key] = +(totals[key]/count).toFixed(2); });
+  return totals;
+}
+function avgSkill(p){
+  const v = Object.values(paramsObj(p));
+  return +(v.reduce((a,b)=>a+b,0)/v.length).toFixed(2);
+}
+function levelInt(p){ return Math.round(avgSkill(p)); }
+function ageFromYear(y){ const Y=+y||0; if(!Y) return 0; return new Date().getFullYear()-Y; }
+
+function levelColor(n){
+  const clamp = (x,min,max)=> Math.max(min, Math.min(max, x));
+  n = clamp(n, 0, 100);
+  const lerp = (a,b,t)=> Math.round(a + (b-a)*t);
+  const toHex = (r,g,b)=> '#' + [r,g,b].map(x=> x.toString(16).padStart(2,'0')).join('');
+  const W=[255,255,255], G=[16,185,129], R=[239,68,68];
+  if(n<=50){ const t=n/50; return toHex(lerp(W[0],G[0],t), lerp(W[1],G[1],t), lerp(W[2],G[2],t)); }
+  const t=(n-50)/50; return toHex(lerp(G[0],R[0],t), lerp(G[1],R[1],t), lerp(G[2],R[2],t));
+}
+
+/* Radar con margen extra y emojis en etiquetas */
+function radarSVG(p, size = 220, levels = 4){
+  const pr = paramsObj(p);
+  const labels = ['DIS⚽','TEC🎯','VEL⚡','RES🫁','SAC🔥','FIS💪'];
+  const vals = [pr.disparo, pr.tecnica, pr.velocidad, pr.resistencia, pr.sacrificio, pr.fisico].map(v=>{
+    const num = Number(v);
+    return Number.isFinite(num) ? Math.max(0, Math.min(100, num)) : 0;
+  });
+  const margin = 40; // margen generoso para que etiquetas no se corten
+  const inner = size;
+  const W = inner + margin*2, H = inner + margin*2;
+  const cx = margin + inner/2, cy = margin + inner/2; const pad = 12; const R = (inner/2) - pad; const N = vals.length; const tau = Math.PI*2;
+  const angleAt = (i)=> -Math.PI/2 + i * (tau/N);
+  const pt = (r,a)=> [cx + r*Math.cos(a), cy + r*Math.sin(a)];
+  const grid = [];
+  for (let l = 1; l <= levels; l++){
+    const t = l/levels; const r = R*t; const points = [];
+    for (let i=0;i<N;i++){ const a = angleAt(i); const [x,y] = pt(r,a); points.push(`${x.toFixed(1)},${y.toFixed(1)}`); }
+    grid.push(`<polygon points="${points.join(' ')}" fill="none" stroke="#e5e7eb" stroke-width="1" />`);
+  }
+  const polyPts = [];
+  for (let i=0;i<N;i++){
+    const a = angleAt(i); const r = R * (vals[i]/100); const [x,y] = pt(r,a); polyPts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  }
+  const shape = `<polygon points="${polyPts.join(' ')}" fill="rgba(20,184,166,0.18)" stroke="#14b8a6" stroke-width="2" />`;
+  const axes = []; const texts = [];
+  const labelRadius = R + 24;
+  for (let i=0;i<N;i++){
+    const a = angleAt(i); const [x,y] = pt(R,a);
+    axes.push(`<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#f1f5f9" stroke-width="1" />`);
+    const [tx,ty] = pt(labelRadius, a);
+    texts.push(`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="12" fill="#334155">${labels[i]} ${Math.round(vals[i])}</text>`);
+  }
+  return `<svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true" style="overflow:visible">${grid.join('')}${axes.join('')}${shape}${texts.join('')}</svg>`;
+}
+
+function radarMiniSVG(source, size = 80){
+  if(!source) return '';
+  const params = PARAM_KEYS.every(key => Object.prototype.hasOwnProperty.call(source, key)) ? source : paramsObj(source);
+  const vals = PARAM_KEYS.map(key => {
+    const num = Number(params[key]);
+    return Number.isFinite(num) ? Math.max(0, Math.min(100, num)) : 0;
+  });
+  const margin = 6;
+  const inner = size;
+  const W = inner + margin*2, H = inner + margin*2;
+  const cx = margin + inner/2, cy = margin + inner/2;
+  const R = inner/2;
+  const levels = 3;
+  const N = vals.length;
+  const tau = Math.PI*2;
+  const angleAt = (i)=> -Math.PI/2 + i * (tau/N);
+  const pt = (r,a)=> [cx + r*Math.cos(a), cy + r*Math.sin(a)];
+  const grid = [];
+  for(let l=1; l<=levels; l++){
+    const t = l/levels; const r = R*t; const points = [];
+    for(let i=0;i<N;i++){ const a=angleAt(i); const [x,y]=pt(r,a); points.push(`${x.toFixed(1)},${y.toFixed(1)}`); }
+    grid.push(`<polygon points="${points.join(' ')}" fill="none" stroke="rgba(148,163,184,0.35)" stroke-width="0.8" />`);
+  }
+  const polyPts = [];
+  for(let i=0;i<N;i++){
+    const a=angleAt(i); const r=R*(vals[i]/100); const [x,y]=pt(r,a); polyPts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  }
+  const axes = [];
+  for(let i=0;i<N;i++){
+    const a=angleAt(i); const [x,y]=pt(R,a);
+    axes.push(`<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="rgba(148,163,184,0.2)" stroke-width="0.6" />`);
+  }
+  const shape = `<polygon points="${polyPts.join(' ')}" fill="rgba(20,184,166,0.2)" stroke="#14b8a6" stroke-width="1.4" />`;
+  return `<svg width="100%" height="100%" viewBox="0 0 ${W} ${H}" aria-hidden="true" style="overflow:visible">${grid.join('')}${axes.join('')}${shape}</svg>`;
+}
+
+/* ---------- Card unificada (valor grande a la izquierda, sin radar) ---------- */
+function playerCard(p, opts = {}) {
+  const mediaInt = levelInt(p);
+  const ctx = opts.context || 'registry'; // registry | apuntados | team
+  const draggable = ctx !== 'team';
+  const footer = ctx === 'registry'
+    ? `<button data-add="${p.id}" title="Apuntar" class="text-emerald-700 hover:text-emerald-900 text-sm">Apuntar</button>`
+    : (ctx === 'apuntados'
+      ? `<button data-remove="${p.id}" title="Quitar" class="text-slate-600 hover:text-slate-900 text-sm">Quitar</button>`
+      : '');
+
+  const params = paramsObj(p);
+  const paramsHtml = PARAM_KEYS.map((key) => {
+    const icon = PARAM_ICONS[key];
+    const val = Math.round(params[key] ?? 0);
+    return `<div class="flex items-center gap-1"><span>${icon}</span><span class="tabular-nums font-medium text-slate-700">${val}</span></div>`;
+  }).join('');
+  const miniRadar = radarMiniSVG(params, 70);
+
+  return `
+    <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm hover:shadow transition"
+         ${draggable ? 'draggable="true"' : ''} data-drag-id="${p.id}">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex items-start gap-4">
+          <div class="flex flex-col items-center sm:items-start gap-2">
+            <div class="flex items-center gap-3">
+              <div class="text-5xl font-black leading-none text-slate-900">${mediaInt}</div>
+              <div class="w-14 h-14">${miniRadar || ''}</div>
+            </div>
+            <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-slate-500"><span>⭐</span><span>Media</span></div>
+          </div>
+          <div class="space-y-2">
+            <div class="font-semibold leading-tight text-slate-900">${p.nombre} ${p.apellido}</div>
+            <div class="grid grid-cols-3 gap-x-3 gap-y-1 text-xs text-slate-600">
+              ${paramsHtml}
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button data-edit="${p.id}" title="Editar" class="text-slate-500 hover:text-slate-800">ⓘ</button>
+        </div>
+      </div>
+      ${footer ? `<div class="mt-3 flex justify-end">${footer}</div>` : ''}
+      <div class="h-1.5 w-full rounded-b-[10px] mt-3" style="background-color:${levelColor(mediaInt)}"></div>
+    </div>`;
+}
+
+/* ---------- Elegir carpeta (File System Access) ---------- */
+document.getElementById('pickDirBtn').addEventListener('click', async () => {
+  if (!window.showDirectoryPicker) { alert('Tu navegador no soporta seleccionar carpeta. Usaré descargas.'); return; }
+  try{
+    const dir=await window.showDirectoryPicker();
+    if (await verifyDirPermission(dir)) { fichasDirHandle=dir; alert('Carpeta seleccionada.'); }
+  }catch(e){ console.warn(e); }
+});
+async function verifyDirPermission(dirHandle){
+  const opts={mode:'readwrite'};
+  if ((await dirHandle.queryPermission(opts))==='granted') return true;
+  return (await dirHandle.requestPermission(opts))==='granted';
+}
+
+/* ---------- Form modal (crear/editar) ---------- */
+const openFormBtn=document.getElementById('openFormBtn');
+const formModal=document.getElementById('formModal');
+const formTitle=document.getElementById('formTitle');
+const closeFormBtn=document.getElementById('closeFormBtn');
+const cancelFormBtn=document.getElementById('cancelFormBtn');
+const form=document.getElementById('playerForm');
+const deleteBtn=document.getElementById('deletePlayerBtn');
+const radarBox = document.getElementById('radarBox');
+const formAverageEl = document.getElementById('formAverageValue');
+const formMiniRadarEl = document.getElementById('formMiniRadar');
+
+function showForm(){ formModal.classList.remove('hidden'); formModal.classList.add('flex'); }
+function hideForm(){ formModal.classList.add('hidden'); formModal.classList.remove('flex'); form.reset(); form.elements.editingId.value=''; formTitle.textContent='Registrar nuevo jugador'; updateDeleteVisibility(); }
+function updateDeleteVisibility(){ deleteBtn.classList.toggle('hidden', !form.elements.editingId.value); }
+
+openFormBtn.addEventListener('click', ()=> {
+  form.reset();
+  form.elements.editingId.value='';
+  formTitle.textContent='Registrar nuevo jugador';
+  showForm();
+  updateDeleteVisibility();
+  ['disparo','tecnica','velocidad','resistencia','sacrificio','fisico'].forEach(bindRangeNumber);
+  setTimeout(redrawRadarFromForm, 0);
+});
+closeFormBtn.addEventListener('click', hideForm);
+cancelFormBtn.addEventListener('click', hideForm);
+formModal.addEventListener('click', (e)=>{ if(e.target===formModal) hideForm(); });
+form.addEventListener('input', updateDeleteVisibility);
+
+/* slider <-> number vinculados + radar live */
+function bindRangeNumber(name){
+  const r = form.elements[name];
+  const n = form.elements[name+"_num"];
+  if(!r||!n) return;
+  const syncRtoN = ()=>{ n.value = r.value; redrawRadarFromForm(); };
+  const syncNtoR = ()=>{
+    let v = Number(n.value);
+    if(!Number.isFinite(v)) v = 0;
+    v = Math.min(100, Math.max(0, v));
+    r.value=v;
+    n.value=v;
+    redrawRadarFromForm();
+  };
+  r.addEventListener('input', syncRtoN);
+  n.addEventListener('input', syncNtoR);
+  n.value = r.value;
+}
+
+function redrawRadarFromForm(){
+  const val = (k)=> +(form.elements[k+"_num"]?.value || form.elements[k]?.value || 50);
+  const pr = { disparo:val('disparo'), tecnica:val('tecnica'), velocidad:val('velocidad'), resistencia:val('resistencia'), sacrificio:val('sacrificio'), fisico:val('fisico') };
+  if(radarBox){
+    radarBox.innerHTML = radarSVG(pr, 220, 4);
+  }
+  if(formAverageEl){
+    const avgVal = Math.round(PARAM_KEYS.reduce((sum,key)=> sum + pr[key], 0) / PARAM_KEYS.length);
+    formAverageEl.textContent = String(avgVal);
+  }
+  if(formMiniRadarEl){
+    formMiniRadarEl.innerHTML = radarMiniSVG(pr, 64);
+  }
+}
+
+['disparo','tecnica','velocidad','resistencia','sacrificio','fisico'].forEach(bindRangeNumber);
+
+if(form.elements.nacimiento){
+  form.elements.nacimiento.addEventListener('input', ()=>{
+    const y = +form.elements.nacimiento.value;
+    form.elements.edad_calc.value = y? (new Date().getFullYear()-y) : '';
+  });
+}
+
+function fillForm(p){
+  form.elements.editingId.value = p.id || '';
+  form.elements.nombre.value = p.nombre || '';
+  form.elements.apellido.value = p.apellido || '';
+  form.elements.nacimiento.value = p.nacimiento || (p.edad ? (new Date().getFullYear()-p.edad) : '');
+  form.elements.edad_calc.value = p.nacimiento ? (new Date().getFullYear()-p.nacimiento) : '';
+  form.elements.peso.value = p.peso || '';
+  form.elements.altura.value = p.altura || '';
+  for (const k of ['disparo','tecnica','velocidad','resistencia','sacrificio','fisico']) {
+    const val = (k==='disparo') ? (p.vision ?? p.dribling ?? p.tecnica ?? p[k]) : p[k];
+    const v = (val!=null ? val : 50);
+    if (form.elements[k]) form.elements[k].value = v;
+    if (form.elements[k+"_num"]) form.elements[k+"_num"].value = v;
+  }
+  ['disparo','tecnica','velocidad','resistencia','sacrificio','fisico'].forEach(bindRangeNumber);
+  updateDeleteVisibility();
+  setTimeout(redrawRadarFromForm, 0);
+}
+
+form.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const fd=new FormData(form);
+  const editingId = fd.get('editingId');
+  const getVal = (k)=> +(fd.get(k+"_num") || fd.get(k));
+  const payload = {
+    nombre: fd.get('nombre').toString().trim(),
+    apellido: fd.get('apellido').toString().trim(),
+    nacimiento: +fd.get('nacimiento'),
+    peso: +fd.get('peso'),
+    altura: +fd.get('altura'),
+    disparo: getVal('disparo'),
+    tecnica: getVal('tecnica'),
+    velocidad: getVal('velocidad'),
+    resistencia: getVal('resistencia'),
+    sacrificio: getVal('sacrificio'),
+    fisico: getVal('fisico')
+  };
+
+  let player;
+  if (editingId) {
+    const idx = state.players.findIndex(p=>p.id===editingId);
+    if (idx>=0) {
+      player = { ...state.players[idx], ...payload }; // conserva id/createdAt
+      state.players[idx] = player;
+    }
+  } else {
+    player = { id: uuid(), createdAt: new Date().toISOString(), ...payload };
+    state.players.push(player);
+  }
+
+  saveState(); renderAll(); hideForm();
+
+  const ficha = buildFichaJSON(player);
+  try {
+    if (fichasDirHandle && (await verifyDirPermission(fichasDirHandle))) {
+      await writeFichaToDir(fichasDirHandle, player, ficha);
+    } else {
+      downloadText(JSON.stringify(ficha, null, 2), fichaFileName(player), 'application/json');
+    }
+  } catch (err) {
+    console.warn('No se pudo escribir en carpeta, descargo ficha:', err);
+    downloadText(JSON.stringify(ficha, null, 2), fichaFileName(player), 'application/json');
+  }
+});
+
+deleteBtn.addEventListener('click', ()=>{
+  const id = form.elements.editingId.value; if(!id) return;
+  if(!confirm('¿Eliminar este jugador?')) return;
+  state.players = state.players.filter(x=> x.id!==id);
+  state.apuntados = state.apuntados.filter(x=> x!==id);
+  saveState(); renderAll(); hideForm();
+});
+
+/* ---------- Fichas archivo ---------- */
+function fichaFileName(p){
+  const safe=(s)=> s.normalize('NFKD').replace(/[^\w\\-]+/g,'_');
+  return `ficha_${safe(p.nombre)}_${safe(p.apellido)}_${p.id}.json`;
+}
+function buildFichaJSON(p){
+  return {
+    tipo:"ficha_jugador",
+    nombre:p.nombre, apellido:p.apellido,
+    anio_nacimiento:p.nacimiento, peso_kg:p.peso, altura_cm:p.altura,
+    niveles:{
+      disparo:p.disparo, tecnica:p.tecnica, velocidad:p.velocidad,
+      resistencia:p.resistencia, sacrificio:p.sacrificio, fisico:p.fisico
+    },
+    puntuacion_media: avgSkill(p), id:p.id, creado:p.createdAt ?? new Date().toISOString(), version:1,
+    escala_referencia:{ uno:"samuel del moral", diez:"David Casals" }
+  };
+}
+async function writeFichaToDir(dirHandle,p,ficha){
+  const fileHandle = await dirHandle.getFileHandle(fichaFileName(p), { create:true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(JSON.stringify(ficha,null,2));
+  await writable.close();
+}
+function downloadText(text, filename, mime='text/plain'){
+  const blob=new Blob([text],{type:mime}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click();
+  a.remove(); URL.revokeObjectURL(url);
+}
+
+/* ---------- Render: registrados / apuntados / equipos ---------- */
+const playersGrid=document.getElementById('playersGrid');
+const searchInput=document.getElementById('searchInput');
+const drop=document.getElementById('apuntadosDrop');
+const clearApBtn=document.getElementById('clearApuntadosBtn');
+
+function renderPlayers(){
+  const q=(searchInput.value||'').toLowerCase();
+  const exclude = new Set(state.apuntados);
+  const list = state.players
+    .filter(p => !exclude.has(p.id))
+    .sort((a,b)=> a.apellido.localeCompare(b.apellido)||a.nombre.localeCompare(b.nombre))
+    .filter(p => (p.nombre+' '+p.apellido).toLowerCase().includes(q));
+  playersGrid.innerHTML = list.length ? list.map(p=>playerCard(p,{context:'registry'})).join('') : `<p class="text-sm text-slate-500">Sin jugadores.</p>`;
+
+  playersGrid.querySelectorAll('[data-add]').forEach(el=> el.addEventListener('click', ()=> addApuntado(el.dataset.add)));
+  playersGrid.querySelectorAll('[data-edit]').forEach(el=> el.addEventListener('click', ()=> openEdit(el.dataset.edit)));
+  playersGrid.querySelectorAll('[data-drag-id]').forEach(el=>{
+    el.addEventListener('dragstart',(ev)=> ev.dataTransfer.setData('text/plain', el.dataset.dragId));
+  });
+}
+searchInput.addEventListener('input', renderPlayers);
+
+function renderApuntados(){
+  const list = state.apuntados.map(id=> state.players.find(p=>p.id===id)).filter(Boolean);
+  drop.innerHTML = list.map(p=>playerCard(p,{context:'apuntados'})).join('');
+  drop.querySelectorAll('[data-remove]').forEach(el=> el.addEventListener('click', ()=> removeApuntado(el.dataset.remove)));
+  drop.querySelectorAll('[data-edit]').forEach(el=> el.addEventListener('click', ()=> openEdit(el.dataset.edit)));
+  drop.querySelectorAll('[data-drag-id]').forEach(el=>{
+    el.addEventListener('dragstart',(ev)=> ev.dataTransfer.setData('text/plain', el.dataset.dragId));
+  });
+}
+
+function renderTeams(a=[],b=[]){
+  const teamAEl=document.getElementById('teamA');
+  const teamBEl=document.getElementById('teamB');
+  const sumAEl=document.getElementById('sumA');
+  const sumBEl=document.getElementById('sumB');
+  const balanceInfo=document.getElementById('balanceInfo');
+  const teamARadarEl=document.getElementById('teamARadar');
+  const teamBRadarEl=document.getElementById('teamBRadar');
+
+  const cardTeam = (p)=> playerCard(p,{context:'team'});
+  teamAEl.innerHTML = a.map(cardTeam).join('');
+  teamBEl.innerHTML = b.map(cardTeam).join('');
+
+  const renderTeamRadar = (el, players)=>{
+    if(!el) return;
+    if(players.length){
+      const avgParams = averageParams(players);
+      el.innerHTML = radarMiniSVG(avgParams, 96);
+      el.classList.remove('opacity-30');
+      el.title = 'Media de parámetros del equipo';
+    }else{
+      el.innerHTML = '<div class="w-full h-full rounded-full border border-dashed border-slate-200"></div>';
+      el.classList.add('opacity-30');
+      el.removeAttribute('title');
+    }
+  };
+  renderTeamRadar(teamARadarEl, a);
+  renderTeamRadar(teamBRadarEl, b);
+
+  const avg = arr=> arr.length? arr.reduce((s,x)=>s+x,0)/arr.length : 0;
+  const avgScoreA = avg(a.map(avgSkill));
+  const avgScoreB = avg(b.map(avgSkill));
+  const avgAgeA = avg(a.map(p=> ageFromYear(p.nacimiento)));
+  const avgAgeB = avg(b.map(p=> ageFromYear(p.nacimiento)));
+  const avgPesoA = avg(a.map(p=> +p.peso||0));
+  const avgPesoB = avg(b.map(p=> +p.peso||0));
+
+  sumAEl.textContent = `Medias → ⭐ ${avgScoreA.toFixed(1)} | Edad ${avgAgeA.toFixed(1)} | Peso ${avgPesoA.toFixed(1)} kg`;
+  sumBEl.textContent = `Medias → ⭐ ${avgScoreB.toFixed(1)} | Edad ${avgAgeB.toFixed(1)} | Peso ${avgPesoB.toFixed(1)} kg`;
+
+  const diff=Math.abs(a.reduce((s,p)=>s+avgSkill(p),0) - b.reduce((s,p)=>s+avgSkill(p),0)).toFixed(2);
+  if (balanceInfo) balanceInfo.textContent = a.length && b.length ? `Diferencia absoluta: ${diff}` : '';
+}
+
+function renderAll(){ renderPlayers(); renderApuntados(); renderTeams(); }
+
+/* ---------- Apuntados: lógica + DnD ---------- */
+function addApuntado(id){ if(!state.apuntados.includes(id)){ state.apuntados.push(id); saveState(); renderAll(); } }
+function removeApuntado(id){ state.apuntados = state.apuntados.filter(x=>x!==id); saveState(); renderAll(); }
+
+drop.addEventListener('dragover',(e)=>{ e.preventDefault(); drop.classList.add('bg-slate-50'); });
+drop.addEventListener('dragleave',()=> drop.classList.remove('bg-slate-50'));
+drop.addEventListener('drop',(e)=>{ e.preventDefault(); drop.classList.remove('bg-slate-50');
+  const id=e.dataTransfer.getData('text/plain');
+  if(state.players.some(p=>p.id===id)) addApuntado(id);
+});
+clearApBtn.addEventListener('click',()=>{ state.apuntados=[]; saveState(); renderAll(); });
+
+// Devolver desde Apuntados soltando sobre Registrados
+playersGrid.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  playersGrid.classList.add('ring-2', 'ring-emerald-400');
+});
+playersGrid.addEventListener('dragleave', () => {
+  playersGrid.classList.remove('ring-2', 'ring-emerald-400');
+});
+playersGrid.addEventListener('drop', (e) => {
+  e.preventDefault();
+  playersGrid.classList.remove('ring-2', 'ring-emerald-400');
+  const id = e.dataTransfer.getData('text/plain');
+  if (state.apuntados.includes(id)) {
+    removeApuntado(id);
+  }
+});
+
+/* ---------- Abrir edición desde botón info (ⓘ) ---------- */
+function openEdit(id){
+  const p=state.players.find(x=>x.id===id); if(!p) return;
+  formTitle.textContent='Editar jugador';
+  fillForm(p);
+  showForm();
+}
+
+/* ---------- Equipos ---------- */
+const makeBtn=document.getElementById('makeTeamsBtn');
+const shuffleBtn=document.getElementById('shuffleTeamsBtn');
+makeBtn.addEventListener('click',()=> makeTeams());
+shuffleBtn.addEventListener('click',()=> makeTeams(Date.now()));
+
+function makeTeams(seed=null){
+  const selected=state.apuntados.map(id=> state.players.find(p=>p.id===id)).filter(Boolean);
+  if(selected.length!==10){ alert('Debes tener exactamente 10 apuntados para crear 2 equipos de 5.'); return; }
+  const players=selected.slice(); let best=null, bestDiff=Infinity; const tries=1024;
+  const rnd=(s)=>{ let x=s||Date.now(); return ()=> (x^=x<<13, x^=x>>>17, x^=x<<5, (x>>>0)/0xFFFFFFFF); };
+  for(let i=0;i<tries;i++){
+    const r=rnd((seed||state.lastSeed)+i); const arr=players.slice();
+    for(let j=arr.length-1;j>0;j--){ const k=Math.floor(r()*(j+1)); [arr[j],arr[k]]=[arr[k],arr[j]]; }
+    const a=[], b=[]; let sa=0,sb=0;
+    arr.sort((p,q)=> avgSkill(q)-avgSkill(p));
+    for(const p of arr){
+      if(a.length<5 && (sa<=sb || b.length>=5)){ a.push(p); sa+=avgSkill(p); }
+      else { b.push(p); sb+=avgSkill(p); }
+    }
+    const diff=Math.abs(sa-sb); if(diff<bestDiff){ bestDiff=diff; best={a,b}; if(bestDiff<0.01) break; }
+  }
+  state.lastSeed=(state.lastSeed+7919)%1_000_000_007; saveState(); renderTeams(best.a,best.b);
+}
+
+/* ---------- Exportar / Importar ---------- */
+document.getElementById('exportStateBtn').addEventListener('click',()=>{
+  const out=JSON.stringify(state,null,2); downloadText(out,'estado_app.json','application/json');
+});
+document.getElementById('importStateInput').addEventListener('change', async (e)=>{
+  const file=e.target.files?.[0]; if(!file) return;
+  try{
+    const text=await file.text(); const data=JSON.parse(text);
+    if(!data.players||!Array.isArray(data.players)) throw new Error('formato');
+    state=data; saveState(); renderAll(); alert('Estado importado.');
+  }catch(err){ alert('Archivo de estado inválido.'); } finally { e.target.value=''; }
+});
+
+/* ---------- Init ---------- */
+renderAll();
+</script>
+</body>
+</html>
