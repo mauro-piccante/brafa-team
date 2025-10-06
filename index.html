@@ -660,29 +660,29 @@ form.addEventListener('submit', async (e)=>{
   }
 
   saveState(); renderAll(); hideForm();
-
-const ficha = buildFichaJSON(player);
-try {
-  if (supa) {
-    await writeFichaOnline(player, ficha);                 // 1) subir online
-  } else if (fichasDirHandle && (await verifyDirPermission(fichasDirHandle))) {
-    await writeFichaToDir(fichasDirHandle, player, ficha); // 2) carpeta local (si diste permiso)
-  } else {
-    downloadText(JSON.stringify(ficha, null, 2), fichaFileName(player), 'application/json'); // 3) descarga
-  }
-} catch (err) {
-  console.warn('Fallo subida online; hago fallback local/descarga:', err);
+  const ficha = buildFichaJSON(player);
   try {
-    if (fichasDirHandle && (await verifyDirPermission(fichasDirHandle))) {
-      await writeFichaToDir(fichasDirHandle, player, ficha);
+    if (supa) {
+      await writeFichaOnline(player, ficha);                 // 1) subir online
+    } else if (fichasDirHandle && (await verifyDirPermission(fichasDirHandle))) {
+      await writeFichaToDir(fichasDirHandle, player, ficha); // 2) carpeta local (si diste permiso)
     } else {
-      downloadText(JSON.stringify(ficha, null, 2), fichaFileName(player), 'application/json');
+      downloadText(JSON.stringify(ficha, null, 2), fichaFileName(player), 'application/json'); // 3) descarga
     }
-  } catch (e2) {
-    console.error('No se pudo guardar la ficha ni online ni local:', e2);
-    alert('No se pudo guardar la ficha online ni local. Revisa Supabase o permisos de carpeta.');
+  } catch (err) {
+    console.warn('Fallo subida online; hago fallback local/descarga:', err);
+    try {
+      if (fichasDirHandle && (await verifyDirPermission(fichasDirHandle))) {
+        await writeFichaToDir(fichasDirHandle, player, ficha);
+      } else {
+        downloadText(JSON.stringify(ficha, null, 2), fichaFileName(player), 'application/json');
+      }
+    } catch (e2) {
+      console.error('No se pudo guardar la ficha ni online ni local:', e2);
+      alert('No se pudo guardar la ficha online ni local. Revisa Supabase o permisos de carpeta.');
+    }
   }
-};
+});
 
   // --- Guardar ficha online en Supabase ---
 async function writeFichaOnline(p, ficha){
