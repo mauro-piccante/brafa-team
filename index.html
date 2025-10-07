@@ -61,7 +61,7 @@
         <div class="flex items-start justify-between mb-3 gap-3">
           <div>
             <h2 class="text-lg font-medium">Blanco</h2>
-            <p id="teamAStats" class="text-xs text-slate-500 mt-1"></p>
+            <div id="teamAStats" class="mt-1 flex items-end gap-2 text-slate-600"></div>
           </div>
           <div id="teamARadar" class="w-16 h-16 shrink-0"></div>
         </div>
@@ -74,7 +74,7 @@
         <div class="flex items-start justify-between mb-3 gap-3">
           <div>
             <h2 class="text-lg font-medium">Peto</h2>
-            <p id="teamBStats" class="text-xs text-slate-500 mt-1"></p>
+            <div id="teamBStats" class="mt-1 flex items-end gap-2 text-slate-600"></div>
           </div>
           <div id="teamBRadar" class="w-16 h-16 shrink-0"></div>
         </div>
@@ -533,13 +533,13 @@ function radarMiniSVG(source, size = 80){
   return `<svg width="100%" height="100%" viewBox="0 0 ${W} ${H}" aria-hidden="true" style="overflow:visible">${grid.join('')}${axes.join('')}${shape}</svg>`;
 }
 
-/* ---------- Card unificada (valor grande a la izquierda, sin radar) ---------- */
+/* ---------- Card unificada (compacta para listados y detallada en equipos) ---------- */
 function playerCard(p, opts = {}) {
   const mediaInt = levelInt(p);
+  const params = paramsObj(p);
   const ctx = opts.context || 'registry'; // registry | apuntados | team
   const draggable = ctx !== 'team';
   if (ctx === 'team') {
-    const params = paramsObj(p);
     const paramsHtml = PARAM_KEYS.map((key) => {
       const icon = PARAM_ICONS[key];
       const val = Math.round(params[key] ?? 0);
@@ -581,17 +581,27 @@ function playerCard(p, opts = {}) {
   const name = `${p.nombre} ${p.apellido}`.trim();
 
   const actionButtonClasses = isRegistry ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-500 hover:bg-rose-600';
+  const miniRadar = radarMiniSVG(params, 64);
 
   return `
-    <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm hover:shadow transition flex items-center justify-between gap-3"
+    <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm hover:shadow transition"
          ${draggable ? 'draggable="true"' : ''} data-drag-id="${p.id}">
-      <div class="min-w-0">
-        <p class="text-sm font-semibold text-slate-900 truncate">Nivel ${mediaInt} · ${name || 'Sin nombre'}</p>
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="flex flex-col items-center gap-2 w-16 shrink-0">
+            <div class="text-3xl font-bold leading-none text-slate-900">${mediaInt}</div>
+            <div class="w-14 h-14">${miniRadar || ''}</div>
+          </div>
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-slate-900 truncate">${name || 'Sin nombre'}</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-1">
+          <button data-edit="${p.id}" title="Ver ficha" class="px-2 py-1 rounded-lg text-sm text-slate-500 hover:text-slate-800">ⓘ</button>
+          <button ${actionAttr} title="${actionTitle}" class="w-8 h-8 rounded-full text-white text-lg leading-none flex items-center justify-center ${actionButtonClasses}">${actionLabel}</button>
+        </div>
       </div>
-      <div class="flex items-center gap-1">
-        <button data-edit="${p.id}" title="Ver ficha" class="px-2 py-1 rounded-lg text-sm text-slate-500 hover:text-slate-800">ⓘ</button>
-        <button ${actionAttr} title="${actionTitle}" class="w-8 h-8 rounded-full text-white text-lg leading-none flex items-center justify-center ${actionButtonClasses}">${actionLabel}</button>
-      </div>
+      <div class="mt-2 h-1 w-full rounded-full" style="background-color:${levelColor(mediaInt)}"></div>
     </div>`;
 }
 
@@ -1092,15 +1102,19 @@ function renderTeams(a=[],b=[]){
   const avgAgeA = averagePositive(a.map(p=> ageFromYear(p.nacimiento)));
   const avgAgeB = averagePositive(b.map(p=> ageFromYear(p.nacimiento)));
 
-  const statsText = (count, avgScore, avgPeso, avgAltura)=>{
-    if(!count) return '⭐ — · Peso — · Altura —';
+  const statsHtml = (count, avgScore, avgPeso, avgAltura)=>{
+    if(!count) return `<span class="text-sm text-slate-400">Sin jugadores</span>`;
     const pesoText = avgPeso!=null ? `${avgPeso.toFixed(1)} kg` : '—';
     const alturaText = avgAltura!=null ? `${avgAltura.toFixed(1)} cm` : '—';
-    return `⭐ ${avgScore.toFixed(1)} · Peso ${pesoText} · Altura ${alturaText}`;
+    return `
+      <span class="text-3xl font-bold text-slate-900 leading-none">⭐ ${avgScore.toFixed(1)}</span>
+      <span class="text-xs uppercase tracking-[0.2em] text-slate-500">Peso ${pesoText}</span>
+      <span class="text-xs uppercase tracking-[0.2em] text-slate-500">Altura ${alturaText}</span>
+    `;
   };
 
-  if(teamAStatsEl) teamAStatsEl.textContent = statsText(a.length, avgScoreA, avgPesoA, avgAlturaA);
-  if(teamBStatsEl) teamBStatsEl.textContent = statsText(b.length, avgScoreB, avgPesoB, avgAlturaB);
+  if(teamAStatsEl) teamAStatsEl.innerHTML = statsHtml(a.length, avgScoreA, avgPesoA, avgAlturaA);
+  if(teamBStatsEl) teamBStatsEl.innerHTML = statsHtml(b.length, avgScoreB, avgPesoB, avgAlturaB);
 
   const ageText = (avgAge)=>{
     if(avgAge==null) return 'Edad media sin datos';
