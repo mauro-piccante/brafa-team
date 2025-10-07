@@ -105,6 +105,7 @@
 
       <form id="playerForm" class="grid md:grid-cols-2 gap-6">
         <input type="hidden" name="editingId" />
+        <input type="hidden" name="avatarData" />
 
         <!-- Columna izquierda: datos + sliders -->
         <div class="space-y-4">
@@ -121,6 +122,24 @@
             <input required name="peso" type="number" min="20" max="200" step="0.1" placeholder="Peso (kg)" class="w-full px-3 py-2 rounded-xl border border-slate-200" />
             <input required name="altura" type="number" min="120" max="230" step="0.5" placeholder="Altura (cm)" class="w-full px-3 py-2 rounded-xl border border-slate-200" />
           </div>
+
+          <div class="flex items-center gap-4">
+            <div class="relative">
+              <div class="w-20 h-20 rounded-full overflow-hidden border border-slate-200 bg-slate-200/50 flex items-center justify-center">
+                <img id="avatarPreview" alt="Foto del jugador" class="hidden w-full h-full object-cover" />
+                <span id="avatarPlaceholder" class="text-xs text-slate-500 text-center leading-tight px-2">Sin foto</span>
+              </div>
+            </div>
+            <div class="flex flex-col gap-2 text-sm text-slate-600">
+              <p class="text-xs text-slate-500 uppercase tracking-[0.3em]">Foto</p>
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="button" id="avatarUploadBtn" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700">Subir foto</button>
+                <button type="button" id="avatarRemoveBtn" class="px-3 py-1.5 rounded-lg border border-transparent text-xs font-medium text-rose-600 bg-rose-50 hidden">Quitar</button>
+              </div>
+              <p class="text-xs text-slate-500">Acepta JPG o PNG. Lo ideal es una foto cuadrada.</p>
+            </div>
+          </div>
+          <input id="avatarInput" type="file" accept="image/*" class="hidden" />
 
           <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 flex items-center justify-between gap-4">
             <div>
@@ -698,6 +717,48 @@ function playerCard(p, opts = {}) {
   const draggable = opts.draggable !== false;
   const dataAttrs = [`data-drag-id="${p.id}"`, `data-context="${ctx}"`];
 
+  const escapeHtml = (value = '') => value.replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[char]));
+  const rawName = `${(p.nombre || '').trim()} ${(p.apellido || '').trim()}`.trim();
+  const displayName = rawName || 'Sin nombre';
+  const safeDisplayName = escapeHtml(displayName);
+  const altText = rawName ? `Foto de ${rawName}` : 'Foto del jugador';
+  const safeAltText = escapeHtml(altText);
+  const avatarRaw = typeof p.avatar === 'string' ? p.avatar.trim() : '';
+  const hasAvatar = avatarRaw.length > 0;
+  const safeAvatarSrc = hasAvatar ? escapeHtml(avatarRaw) : '';
+  const initials = (rawName || '??')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || '??';
+
+  const avatarCircle = (size = 'md', options = {}) => {
+    const { showBadge = true } = options;
+    const sizeClass = size === 'lg' ? 'w-20 h-20' : 'w-16 h-16';
+    const badgeClasses = size === 'lg' ? 'text-xs px-2 py-0.5' : 'text-[11px] px-1.5 py-0.5';
+    const initialsClass = size === 'lg' ? 'text-base' : 'text-sm';
+    const imageHtml = hasAvatar
+      ? `<img src="${safeAvatarSrc}" alt="${safeAltText}" class="w-full h-full object-cover" />`
+      : `<span class="${initialsClass} font-semibold uppercase text-slate-600">${initials}</span>`;
+    const badge = showBadge
+      ? `<div class="absolute -bottom-1 -right-1 rounded-full bg-slate-900 text-white ${badgeClasses} font-semibold leading-none shadow-sm">${mediaInt}</div>`
+      : '';
+    return `<div class="relative ${sizeClass} shrink-0">
+      <div class="${sizeClass} rounded-full overflow-hidden border border-slate-200 bg-slate-200/50 flex items-center justify-center">
+        ${imageHtml}
+      </div>
+      ${badge}
+    </div>`;
+  };
+
   if (ctx === 'team') {
     const paramsHtml = PARAM_KEYS.map((key) => {
       const icon = PARAM_ICONS[key];
@@ -707,22 +768,26 @@ function playerCard(p, opts = {}) {
     const miniRadar = radarMiniSVG(params, 70);
     if (opts.team) dataAttrs.push(`data-team="${opts.team}"`);
     const attrString = [draggable ? 'draggable="true"' : '', ...dataAttrs].filter(Boolean).join(' ');
+    const avatarLarge = avatarCircle('lg', { showBadge: false });
     return `
       <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm hover:shadow transition"
            ${attrString}>
         <div class="flex items-start justify-between gap-3">
           <div class="flex items-start gap-4">
-            <div class="flex flex-col items-center sm:items-start gap-2">
-              <div class="flex items-center gap-3">
-                <div class="text-5xl font-black leading-none text-slate-900">${mediaInt}</div>
-                <div class="w-14 h-14">${miniRadar || ''}</div>
+            ${avatarLarge}
+            <div class="flex flex-col sm:flex-row sm:items-start gap-4">
+              <div class="flex flex-col items-center sm:items-start gap-2">
+                <div class="flex items-center gap-3">
+                  <div class="text-5xl font-black leading-none text-slate-900">${mediaInt}</div>
+                  <div class="w-14 h-14">${miniRadar || ''}</div>
+                </div>
+                <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-slate-500"><span>⭐</span><span>Media</span></div>
               </div>
-              <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-slate-500"><span>⭐</span><span>Media</span></div>
-            </div>
-            <div class="space-y-2">
-              <div class="font-semibold leading-tight text-slate-900">${p.nombre} ${p.apellido}</div>
-              <div class="grid grid-cols-3 gap-x-3 gap-y-1 text-xs text-slate-600">
-                ${paramsHtml}
+              <div class="space-y-2">
+                <div class="font-semibold leading-tight text-slate-900">${safeDisplayName}</div>
+                <div class="grid grid-cols-3 gap-x-3 gap-y-1 text-xs text-slate-600">
+                  ${paramsHtml}
+                </div>
               </div>
             </div>
           </div>
@@ -738,25 +803,25 @@ function playerCard(p, opts = {}) {
   const actionAttr = isRegistry ? `data-add="${p.id}"` : `data-remove="${p.id}"`;
   const actionTitle = isRegistry ? 'Apuntar' : 'Quitar';
   const actionLabel = isRegistry ? '+' : '-';
-  const name = `${p.nombre} ${p.apellido}`.trim();
 
   const actionButtonClasses = isRegistry ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-500 hover:bg-rose-600';
-  const miniRadar = radarMiniSVG(params, 80);
+  const miniRadar = radarMiniSVG(params, 56);
+  const radarSnippet = miniRadar ? `<div class="hidden sm:block w-10 h-10 shrink-0">${miniRadar}</div>` : '';
   const attrString = [draggable ? 'draggable="true"' : '', ...dataAttrs].filter(Boolean).join(' ');
+  const avatarSmall = avatarCircle('md');
 
   return `
     <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm hover:shadow transition"
          ${attrString}>
       <div class="flex items-center justify-between gap-3">
-        <div class="flex items-center gap-3">
-          <div class="relative w-20 h-20 shrink-0">
-            <div class="absolute inset-0">${miniRadar || ''}</div>
-            <div class="absolute inset-0 flex items-center justify-center">
-              <span class="text-2xl font-semibold text-slate-900 leading-none">${mediaInt}</span>
-            </div>
-          </div>
+        <div class="flex items-center gap-3 min-w-0">
+          ${avatarSmall}
           <div class="min-w-0">
-            <p class="text-sm font-semibold text-slate-900 truncate">${name || 'Sin nombre'}</p>
+            <p class="text-sm font-semibold text-slate-900 truncate">${safeDisplayName}</p>
+            <div class="mt-1 flex items-center gap-2 text-xs text-slate-500">
+              <span class="flex items-center gap-1"><span>⭐</span><span class="tabular-nums font-semibold text-slate-700">${mediaInt}</span></span>
+              ${radarSnippet}
+            </div>
           </div>
         </div>
         <div class="flex items-center gap-1">
@@ -786,14 +851,76 @@ const deleteBtn=document.getElementById('deletePlayerBtn');
 const radarBox = document.getElementById('radarBox');
 const formAverageEl = document.getElementById('formAverageValue');
 const formMiniRadarEl = document.getElementById('formMiniRadar');
+const avatarInput = document.getElementById('avatarInput');
+const avatarUploadBtn = document.getElementById('avatarUploadBtn');
+const avatarRemoveBtn = document.getElementById('avatarRemoveBtn');
+const avatarPreviewImg = document.getElementById('avatarPreview');
+const avatarPlaceholder = document.getElementById('avatarPlaceholder');
 
 function showForm(){ formModal.classList.remove('hidden'); formModal.classList.add('flex'); }
-function hideForm(){ formModal.classList.add('hidden'); formModal.classList.remove('flex'); form.reset(); form.elements.editingId.value=''; formTitle.textContent='Registrar nuevo jugador'; updateDeleteVisibility(); }
+function hideForm(){ formModal.classList.add('hidden'); formModal.classList.remove('flex'); form.reset(); form.elements.editingId.value=''; setAvatarData(''); formTitle.textContent='Registrar nuevo jugador'; updateDeleteVisibility(); }
 function updateDeleteVisibility(){ deleteBtn.classList.toggle('hidden', !form.elements.editingId.value); }
+
+function setAvatarData(data){
+  const avatarField = form.elements.avatarData;
+  const value = data || '';
+  if (avatarField) avatarField.value = value;
+  if (avatarPreviewImg) {
+    if (value) {
+      avatarPreviewImg.src = value;
+      avatarPreviewImg.classList.remove('hidden');
+      if (avatarPlaceholder) avatarPlaceholder.classList.add('hidden');
+    } else {
+      avatarPreviewImg.removeAttribute('src');
+      avatarPreviewImg.classList.add('hidden');
+      if (avatarPlaceholder) avatarPlaceholder.classList.remove('hidden');
+    }
+  }
+  if (avatarRemoveBtn) avatarRemoveBtn.classList.toggle('hidden', !value);
+}
+
+if (avatarUploadBtn) {
+  avatarUploadBtn.addEventListener('click', ()=>{
+    if (avatarInput) avatarInput.click();
+  });
+}
+
+if (avatarInput) {
+  avatarInput.addEventListener('change', ()=>{
+    const [file] = avatarInput.files || [];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('El archivo seleccionado no parece ser una imagen.');
+      avatarInput.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      if (typeof reader.result === 'string') {
+        setAvatarData(reader.result);
+      }
+      avatarInput.value = '';
+    };
+    reader.onerror = ()=>{
+      console.error('No se pudo leer la imagen seleccionada.');
+      alert('Hubo un problema al leer la imagen.');
+      avatarInput.value = '';
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+if (avatarRemoveBtn) {
+  avatarRemoveBtn.addEventListener('click', ()=>{
+    setAvatarData('');
+    if (avatarInput) avatarInput.value = '';
+  });
+}
 
 openFormBtn.addEventListener('click', ()=> {
   form.reset();
   form.elements.editingId.value='';
+  setAvatarData('');
   formTitle.textContent='Registrar nuevo jugador';
   showForm();
   updateDeleteVisibility();
@@ -856,6 +983,7 @@ function fillForm(p){
   form.elements.edad_calc.value = p.nacimiento ? (new Date().getFullYear()-p.nacimiento) : '';
   form.elements.peso.value = p.peso || '';
   form.elements.altura.value = p.altura || '';
+  setAvatarData(p.avatar || '');
   for (const k of ['disparo','tecnica','velocidad','resistencia','sacrificio','fisico']) {
     const val = (k==='disparo') ? (p.vision ?? p.dribling ?? p.tecnica ?? p[k]) : p[k];
     const v = (val!=null ? val : 50);
@@ -872,6 +1000,8 @@ form.addEventListener('submit', async (e)=>{
   const fd=new FormData(form);
   const editingId = fd.get('editingId');
   const getVal = (k)=> +(fd.get(k+"_num") || fd.get(k));
+  const avatarEntry = fd.get('avatarData');
+  const avatar = typeof avatarEntry === 'string' ? avatarEntry.trim() : '';
   const payload = {
     nombre: fd.get('nombre').toString().trim(),
     apellido: fd.get('apellido').toString().trim(),
@@ -883,7 +1013,8 @@ form.addEventListener('submit', async (e)=>{
     velocidad: getVal('velocidad'),
     resistencia: getVal('resistencia'),
     sacrificio: getVal('sacrificio'),
-    fisico: getVal('fisico')
+    fisico: getVal('fisico'),
+    avatar: avatar || ''
   };
 
   let player;
@@ -1006,7 +1137,8 @@ function buildFichaJSON(p){
       resistencia:p.resistencia, sacrificio:p.sacrificio, fisico:p.fisico
     },
     puntuacion_media: avgSkill(p), id:p.id, creado:p.createdAt ?? new Date().toISOString(), version:1,
-    escala_referencia:{ uno:"samuel del moral", diez:"David Casals" }
+    escala_referencia:{ uno:"samuel del moral", diez:"David Casals" },
+    avatar: p.avatar || null
   };
 }
 async function writeFichaToDir(dirHandle,p,ficha){
@@ -1065,6 +1197,9 @@ function playerFromFicha(ficha){
     fisico: takeNivel(niveles.fisico, ficha.fisico)
   };
   if (!player.id) return null;
+  const avatarStr = typeof ficha.avatar === 'string' ? ficha.avatar :
+    (typeof ficha.foto === 'string' ? ficha.foto : '');
+  player.avatar = avatarStr || '';
   for (const key of PARAM_KEYS) {
     player[key] = clampStatValue(player[key], 50);
   }
