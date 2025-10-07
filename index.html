@@ -9,34 +9,35 @@
 </head>
 <body class="bg-slate-50 text-slate-900">
   <div class="w-full max-w-none mx-auto p-4 md:p-6 space-y-6 md:min-h-screen">
-    <header class="flex items-center justify-between">
-      <h1 class="text-2xl font-semibold tracking-tight">Generador de equipos Brafaz</h1>
-      <div class="flex gap-2">
-        <button id="openFormBtn" class="px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm">Nuevo jugador</button>
-        <button id="pickDirBtn" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm">Elegir carpeta de fichas</button>
-        <button id="exportStateBtn" class="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm">Exportar estado</button>
-        <button id="testOnlineBtn" class="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm">Probar online</button>
-        <label class="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm cursor-pointer">
-          Importar estado
-          <input id="importStateInput" type="file" accept="application/json" class="hidden">
-        </label>
+    <header class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <h1 class="text-2xl font-semibold tracking-tight text-center md:text-left">Generador de equipos Brafaz</h1>
+      <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap md:flex-nowrap md:justify-end">
+        <button id="openFormBtn" class="w-full sm:w-auto px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm">Nuevo jugador</button>
       </div>
     </header>
+    <nav id="mobileNav" class="md:hidden -mx-4 px-4" aria-label="Navegación rápida">
+      <div class="flex gap-2 overflow-x-auto pb-2 snap-x snap-mandatory">
+        <button type="button" data-scroll-target="#registradosPanel" class="shrink-0 snap-start px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium whitespace-nowrap text-slate-700">Registrados</button>
+        <button type="button" data-scroll-target="#apuntadosPanel" class="shrink-0 snap-start px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium whitespace-nowrap text-slate-700">Convocados</button>
+        <button type="button" data-scroll-target="#teamAPanel" class="shrink-0 snap-start px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium whitespace-nowrap text-slate-700">Equipo Blanco</button>
+        <button type="button" data-scroll-target="#teamBPanel" class="shrink-0 snap-start px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium whitespace-nowrap text-slate-700">Equipo Peto</button>
+      </div>
+    </nav>
 
     <p class="text-xs text-slate-600">
       Escala de nivel (0–100): <b>0</b> = <i>Incapaz</i> · <b>100</b> = <i>Dios</i>.
     </p>
 
     <!-- barra acciones equipos -->
-    <div class="flex justify-end gap-2 mb-4">
-      <button id="makeTeamsBtn" class="px-4 py-2 rounded-xl bg-indigo-600 text-white">Crear equipos</button>
-      <button id="shuffleTeamsBtn" class="px-4 py-2 rounded-xl bg-white border border-slate-200">Otra versión</button>
+    <div class="flex flex-col gap-2 sm:flex-row sm:justify-end mb-4">
+      <button id="makeTeamsBtn" class="w-full sm:w-auto px-4 py-2 rounded-xl bg-indigo-600 text-white">Crear equipos</button>
+      <button id="shuffleTeamsBtn" class="w-full sm:w-auto px-4 py-2 rounded-xl bg-white border border-slate-200">Otra versión</button>
     </div>
 
     <!-- layout 4 columnas desde tablet -->
-    <section id="layout4col" class="grid grid-cols-1 md:grid-cols-4 md:gap-6 md:h-[calc(100vh-160px)]">
+    <section id="layout4col" class="grid grid-cols-1 gap-4 md:grid-cols-4 md:gap-6 md:h-[calc(100vh-160px)]">
       <!-- Registrados -->
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 md:h-full md:overflow-auto">
+      <div id="registradosPanel" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 md:h-full md:overflow-auto scroll-mt-28">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-lg font-medium">Registrados</h2>
           <input id="searchInput" placeholder="Buscar…" class="px-3 py-2 rounded-xl border border-slate-200 text-sm" />
@@ -46,7 +47,7 @@
       </div>
 
       <!-- Apuntados -->
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 md:h-full md:overflow-auto">
+      <div id="apuntadosPanel" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 md:h-full md:overflow-auto scroll-mt-28">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-lg font-medium">Convocados</h2>
           <button id="clearApuntadosBtn" class="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm">Vaciar</button>
@@ -56,7 +57,7 @@
       </div>
 
       <!-- Equipo A -->
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 md:h-full md:overflow-auto">
+      <div id="teamAPanel" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 md:h-full md:overflow-auto scroll-mt-28">
         <div class="flex items-center justify-between mb-3 gap-3">
           <h2 class="text-lg font-medium">Blanco</h2>
           <div id="teamARadar" class="w-16 h-16 shrink-0"></div>
@@ -66,7 +67,7 @@
       </div>
 
       <!-- Equipo B -->
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 md:h-full md:overflow-auto">
+      <div id="teamBPanel" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 md:h-full md:overflow-auto scroll-mt-28">
         <div class="flex items-center justify-between mb-3 gap-3">
           <h2 class="text-lg font-medium">Peto</h2>
           <div id="teamBRadar" class="w-16 h-16 shrink-0"></div>
@@ -78,8 +79,8 @@
   </div>
 
   <!-- MODAL NUEVO/EDITAR JUGADOR (radar solo aquí) -->
-  <div id="formModal" class="fixed inset-0 hidden items-center justify-center bg-black/40 p-4 z-50 overflow-y-auto">
-    <div class="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-lg max-h-[calc(100vh-3rem)] overflow-y-auto">
+  <div id="formModal" class="fixed inset-0 hidden items-end md:items-center justify-center bg-black/40 p-4 sm:p-6 z-50 overflow-y-auto">
+    <div class="bg-white rounded-t-3xl md:rounded-2xl max-w-3xl w-full p-5 sm:p-6 shadow-lg max-h-[calc(100vh-2rem)] overflow-y-auto">
       <div class="flex items-center justify-between mb-3">
         <h3 id="formTitle" class="text-lg font-semibold">Registrar nuevo jugador</h3>
         <button id="closeFormBtn" class="text-slate-500">✕</button>
@@ -522,14 +523,7 @@ function playerCard(p, opts = {}) {
     </div>`;
 }
 
-/* ---------- Elegir carpeta (File System Access) ---------- */
-document.getElementById('pickDirBtn').addEventListener('click', async () => {
-  if (!window.showDirectoryPicker) { alert('Tu navegador no soporta seleccionar carpeta. Usaré descargas.'); return; }
-  try{
-    const dir=await window.showDirectoryPicker();
-    if (await verifyDirPermission(dir)) { fichasDirHandle=dir; alert('Carpeta seleccionada.'); }
-  }catch(e){ console.warn(e); }
-});
+/* ---------- Permisos carpeta (File System Access) ---------- */
 async function verifyDirPermission(dirHandle){
   const opts={mode:'readwrite'};
   if ((await dirHandle.queryPermission(opts))==='granted') return true;
@@ -776,11 +770,6 @@ async function writeFichaToDir(dirHandle,p,ficha){
   await writable.write(JSON.stringify(ficha,null,2));
   await writable.close();
 }
-function downloadText(text, filename, mime='text/plain'){
-  const blob=new Blob([text],{type:mime}); const url=URL.createObjectURL(blob);
-  const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click();
-  a.remove(); URL.revokeObjectURL(url);
-}
 
 async function listAllBucketFiles(prefix=''){
   if (!supa) return [];
@@ -893,6 +882,62 @@ async function syncPlayersFromSupabase(options = {}){
 async function initializeRemoteSync(){
   if (!supa) return;
   await syncPlayersFromSupabase({ silent: true });
+}
+
+function setupMobileNav(){
+  const nav = document.getElementById('mobileNav');
+  if (!nav) return;
+  const buttons = Array.from(nav.querySelectorAll('[data-scroll-target]'));
+  if (!buttons.length) return;
+  const targets = new Map();
+  buttons.forEach((btn)=>{
+    const selector = btn.dataset.scrollTarget;
+    if (selector) {
+      const el = document.querySelector(selector);
+      if (el) targets.set(selector, el);
+    }
+  });
+  const setActive = (activeBtn)=>{
+    buttons.forEach((btn)=>{
+      const isActive = btn === activeBtn;
+      btn.classList.toggle('bg-emerald-50', isActive);
+      btn.classList.toggle('border-emerald-300', isActive);
+      btn.classList.toggle('text-emerald-700', isActive);
+      btn.classList.toggle('font-semibold', isActive);
+      btn.classList.toggle('text-slate-700', !isActive);
+      btn.classList.toggle('border-slate-200', !isActive);
+    });
+  };
+
+  setActive(buttons[0]);
+
+  buttons.forEach((btn)=>{
+    btn.addEventListener('click', ()=>{
+      const selector = btn.dataset.scrollTarget;
+      const target = selector ? document.querySelector(selector) : null;
+      if (target) {
+        target.scrollIntoView({ behavior:'smooth', block:'start' });
+        setActive(btn);
+      }
+    });
+  });
+
+  if ('IntersectionObserver' in window && targets.size) {
+    const observer = new IntersectionObserver((entries)=>{
+      const visible = entries
+        .filter(entry => entry.isIntersecting)
+        .sort((a,b)=> b.intersectionRatio - a.intersectionRatio);
+      if (visible.length) {
+        const top = visible[0];
+        const selector = `#${top.target.id}`;
+        const activeBtn = buttons.find(btn => btn.dataset.scrollTarget === selector);
+        if (activeBtn) setActive(activeBtn);
+      }
+    }, { rootMargin: '-40% 0px -40% 0px', threshold: [0.1, 0.25, 0.5] });
+    targets.forEach((el)=> observer.observe(el));
+  } else if (buttons.length) {
+    setActive(buttons[0]);
+  }
 }
 
 /* ---------- Render: registrados / apuntados / equipos ---------- */
@@ -1036,32 +1081,10 @@ function makeTeams(seed=null){
   state.lastSeed=(state.lastSeed+7919)%1_000_000_007; saveState(); renderTeams(best.a,best.b);
 }
 
-/* ---------- Exportar / Importar ---------- */
-document.getElementById('exportStateBtn').addEventListener('click',()=>{
-  const out=JSON.stringify(state,null,2); downloadText(out,'estado_app.json','application/json');
-});
-document.getElementById('importStateInput').addEventListener('change', async (e)=>{
-  const file=e.target.files?.[0]; if(!file) return;
-  try{
-    const text=await file.text(); const data=JSON.parse(text);
-    if(!data.players||!Array.isArray(data.players)) throw new Error('formato');
-    state=data; saveState(); renderAll(); alert('Estado importado.');
-  }catch(err){ alert('Archivo de estado inválido.'); } finally { e.target.value=''; }
-});
-
 /* ---------- Init ---------- */
 renderAll();
 initializeRemoteSync();
-const testOnlineBtn = document.getElementById('testOnlineBtn');
-if (testOnlineBtn) testOnlineBtn.addEventListener('click', async ()=>{
-  if(!supa){ alert('Configura SUPABASE_URL y SUPABASE_ANON_KEY.'); return; }
-  try{
-    const ping = new Blob([JSON.stringify({ ping: Date.now() })], { type: 'application/json' });
-    const { error } = await supa.storage.from(SUPABASE_BUCKET).upload(`__ping__/ping.json`, ping, { upsert: true, contentType: 'application/json' });
-    if (error) throw error;
-    alert('Conexión online OK. Bucket accesible.');
-  }catch(err){ alert('Fallo de conexión o bucket: '+ err.message); }
-});
+setupMobileNav();
 </script>
 </body>
 </html>
