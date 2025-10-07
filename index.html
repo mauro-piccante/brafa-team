@@ -59,9 +59,9 @@
       <!-- Equipo A -->
       <div id="teamAPanel" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 md:h-full md:overflow-auto scroll-mt-28">
         <div class="flex items-start justify-between mb-3 gap-3">
-          <div>
+          <div class="w-full">
             <h2 class="text-lg font-medium">Blanco</h2>
-            <div id="teamAStats" class="mt-1 flex items-end gap-2 text-slate-600"></div>
+            <div id="teamAStats" class="mt-3 text-slate-600"></div>
           </div>
           <div id="teamARadar" class="w-16 h-16 shrink-0"></div>
         </div>
@@ -72,15 +72,26 @@
       <!-- Equipo B -->
       <div id="teamBPanel" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 md:h-full md:overflow-auto scroll-mt-28">
         <div class="flex items-start justify-between mb-3 gap-3">
-          <div>
+          <div class="w-full">
             <h2 class="text-lg font-medium">Peto</h2>
-            <div id="teamBStats" class="mt-1 flex items-end gap-2 text-slate-600"></div>
+            <div id="teamBStats" class="mt-3 text-slate-600"></div>
           </div>
           <div id="teamBRadar" class="w-16 h-16 shrink-0"></div>
         </div>
         <div id="teamB" class="grid grid-cols-1 gap-3"></div>
         <p id="sumB" class="mt-3 text-xs text-slate-500"></p>
       </div>
+    </section>
+
+    <section id="comparisonPanel" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-6 space-y-4">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h2 class="text-lg font-medium text-slate-900">Comparativa de perfiles</h2>
+        <div id="comparisonLegend" class="flex flex-wrap items-center gap-3 text-sm text-slate-600"></div>
+      </div>
+      <div id="comparisonRadar" class="relative w-full h-64 md:h-72 flex items-center justify-center">
+        <div class="text-sm text-slate-400">Genera ambos equipos para ver la comparación.</div>
+      </div>
+      <p id="comparisonNote" class="text-xs text-slate-500"></p>
     </section>
   </div>
 
@@ -337,7 +348,27 @@ try {
 } catch {}
 /* ---------- Estado & utilidad ---------- */
 const STORAGE_KEY = 'futbol_app_state_v1';
+
+function defaultAppState(){
+  return { players: [], apuntados: [], teamAIds: [], teamBIds: [], lastSeed: Date.now() };
+}
+
+function normalizeState(rawState){
+  const fallback = defaultAppState();
+  const base = (rawState && typeof rawState === 'object') ? rawState : {};
+  const normalized = {
+    ...base,
+    players: Array.isArray(base.players) ? base.players : fallback.players,
+    apuntados: Array.isArray(base.apuntados) ? base.apuntados : fallback.apuntados,
+    teamAIds: Array.isArray(base.teamAIds) ? base.teamAIds : fallback.teamAIds,
+    teamBIds: Array.isArray(base.teamBIds) ? base.teamBIds : fallback.teamBIds,
+    lastSeed: Number.isFinite(base.lastSeed) ? base.lastSeed : fallback.lastSeed
+  };
+  return normalized;
+}
+
 let state = loadState();
+ensureTeamArrays();
 let fichasDirHandle = null;
 const PARAM_KEYS = ['disparo','tecnica','velocidad','resistencia','sacrificio','fisico'];
 const PARAM_ICONS = {
@@ -358,8 +389,13 @@ const clampStatValue = (value, fallback = 50) => {
 
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return { players: [], apuntados: [], lastSeed: Date.now() };
-  try { return JSON.parse(raw); } catch { return { players: [], apuntados: [], lastSeed: Date.now() }; }
+  if (!raw) return normalizeState({});
+  try { return normalizeState(JSON.parse(raw)); } catch { return normalizeState({}); }
+}
+
+function ensureTeamArrays(){
+  if(!Array.isArray(state.teamAIds)) state.teamAIds = [];
+  if(!Array.isArray(state.teamBIds)) state.teamBIds = [];
 }
 function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 function uuid(){ return 'xxxxxx'.replace(/x/g, ()=> (Math.random()*36|0).toString(36)); }
@@ -412,11 +448,22 @@ function averagePositive(values){
   return valid.reduce((sum, value)=> sum + value, 0) / valid.length;
 }
 
+function teamSkillSum(players = []){
+  return players.reduce((sum, player)=> sum + avgSkill(player), 0);
+}
+
+function teamSkillDiff(teamAPlayers = [], teamBPlayers = []){
+  const totalA = teamSkillSum(teamAPlayers);
+  const totalB = teamSkillSum(teamBPlayers);
+  return Math.abs(totalA - totalB);
+}
+
 const TEAM_BALANCE_WEIGHTS = Object.freeze({
   skill: 1,
-  peso: 0.2,
-  altura: 0.05
+  peso: 0,
+  altura: 0
 });
+const TEAM_BALANCE_TOLERANCE = 1.5;
 
 function balanceMetrics(teamAPlayers = [], teamBPlayers = []){
   const avgSkillA = average(teamAPlayers.map(avgSkill));
@@ -449,6 +496,58 @@ function balanceMetrics(teamAPlayers = [], teamBPlayers = []){
       b: { skill: avgSkillB, peso: avgPesoB, altura: avgAlturaB }
     }
   };
+}
+
+function playersFromIds(ids){
+  if(!Array.isArray(ids) || !ids.length) return [];
+  const seen = new Set();
+  const players = [];
+  ids.forEach((id)=>{
+    if(seen.has(id)) return;
+    const player = state.players.find(p=>p.id===id);
+    if(player){
+      seen.add(id);
+      players.push(player);
+    }
+  });
+  return players;
+}
+
+function movePlayerToTeam(playerId, targetTeam){
+  ensureTeamArrays();
+  if(!playerId) return false;
+  const playerExists = state.players.some(p=>p.id===playerId);
+  if(!playerExists) return false;
+  const team = targetTeam === 'A' ? 'A' : (targetTeam === 'B' ? 'B' : null);
+  if(!team) return false;
+
+  const isInA = state.teamAIds.includes(playerId);
+  const isInB = state.teamBIds.includes(playerId);
+  let changed = false;
+
+  if(team === 'A'){
+    if(!isInA){
+      state.teamAIds.push(playerId);
+      changed = true;
+    }
+    const prevLen = state.teamBIds.length;
+    state.teamBIds = state.teamBIds.filter(id=>id!==playerId);
+    if(state.teamBIds.length !== prevLen) changed = true;
+  } else {
+    if(!isInB){
+      state.teamBIds.push(playerId);
+      changed = true;
+    }
+    const prevLen = state.teamAIds.length;
+    state.teamAIds = state.teamAIds.filter(id=>id!==playerId);
+    if(state.teamAIds.length !== prevLen) changed = true;
+  }
+
+  if(changed){
+    saveState();
+    renderTeams();
+  }
+  return changed;
 }
 
 function levelColor(n){
@@ -533,12 +632,72 @@ function radarMiniSVG(source, size = 80){
   return `<svg width="100%" height="100%" viewBox="0 0 ${W} ${H}" aria-hidden="true" style="overflow:visible">${grid.join('')}${axes.join('')}${shape}</svg>`;
 }
 
+function radarOverlaySVG(avgA, avgB, size = 260){
+  if(!avgA && !avgB) return '';
+  const labels = ['Disparo','Tecnica','Velocidad','Resistencia','Sacrificio','Fisico'];
+  const getValues = (dataset)=> PARAM_KEYS.map(key=>{
+    const num = dataset && Number(dataset[key]);
+    return Number.isFinite(num) ? Math.max(0, Math.min(100, num)) : 0;
+  });
+  const valsA = getValues(avgA);
+  const valsB = getValues(avgB);
+  const margin = 36;
+  const inner = size;
+  const W = inner + margin*2;
+  const H = inner + margin*2;
+  const cx = margin + inner/2;
+  const cy = margin + inner/2;
+  const R = inner/2;
+  const levels = 4;
+  const N = PARAM_KEYS.length;
+  const tau = Math.PI*2;
+  const angleAt = (i)=> -Math.PI/2 + i * (tau/N);
+  const pt = (r,a)=> [cx + r*Math.cos(a), cy + r*Math.sin(a)];
+  const polygonPoints = (vals)=> vals.map((value, idx)=>{
+    const angle = angleAt(idx);
+    const radius = R * (value/100);
+    const [x,y] = pt(radius, angle);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  const grid = [];
+  for(let l=1;l<=levels;l++){
+    const t = l/levels;
+    const r = R*t;
+    const points = [];
+    for(let i=0;i<N;i++){
+      const angle = angleAt(i);
+      const [x,y] = pt(r, angle);
+      points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+    }
+    grid.push(`<polygon points="${points.join(' ')}" fill="none" stroke="rgba(148,163,184,0.3)" stroke-width="1" />`);
+  }
+
+  const axes = [];
+  const texts = [];
+  const labelRadius = R + 24;
+  for(let i=0;i<N;i++){
+    const angle = angleAt(i);
+    const [x,y] = pt(R, angle);
+    axes.push(`<line x1="${cx.toFixed(1)}" y1="${cy.toFixed(1)}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="rgba(148,163,184,0.2)" stroke-width="1" />`);
+    const [tx,ty] = pt(labelRadius, angle);
+    texts.push(`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="12" fill="#475569">${labels[i]}</text>`);
+  }
+
+  const shapeA = avgA ? `<polygon points="${polygonPoints(valsA)}" fill="rgba(37,99,235,0.28)" stroke="#2563eb" stroke-width="2" stroke-linejoin="round" />` : '';
+  const shapeB = avgB ? `<polygon points="${polygonPoints(valsB)}" fill="rgba(249,115,22,0.28)" stroke="#f97316" stroke-width="2" stroke-linejoin="round" />` : '';
+
+  return `<svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true" style="overflow:visible">${grid.join('')}${shapeB}${shapeA}${axes.join('')}${texts.join('')}</svg>`;
+}
+
 /* ---------- Card unificada (compacta para listados y detallada en equipos) ---------- */
 function playerCard(p, opts = {}) {
   const mediaInt = levelInt(p);
   const params = paramsObj(p);
   const ctx = opts.context || 'registry'; // registry | apuntados | team
-  const draggable = ctx !== 'team';
+  const draggable = opts.draggable !== false;
+  const dataAttrs = [`data-drag-id="${p.id}"`, `data-context="${ctx}"`];
+
   if (ctx === 'team') {
     const paramsHtml = PARAM_KEYS.map((key) => {
       const icon = PARAM_ICONS[key];
@@ -546,10 +705,11 @@ function playerCard(p, opts = {}) {
       return `<div class="flex items-center gap-1"><span>${icon}</span><span class="tabular-nums font-medium text-slate-700">${val}</span></div>`;
     }).join('');
     const miniRadar = radarMiniSVG(params, 70);
-
+    if (opts.team) dataAttrs.push(`data-team="${opts.team}"`);
+    const attrString = [draggable ? 'draggable="true"' : '', ...dataAttrs].filter(Boolean).join(' ');
     return `
       <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm hover:shadow transition"
-           ${draggable ? 'draggable="true"' : ''} data-drag-id="${p.id}">
+           ${attrString}>
         <div class="flex items-start justify-between gap-3">
           <div class="flex items-start gap-4">
             <div class="flex flex-col items-center sm:items-start gap-2">
@@ -581,16 +741,19 @@ function playerCard(p, opts = {}) {
   const name = `${p.nombre} ${p.apellido}`.trim();
 
   const actionButtonClasses = isRegistry ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-500 hover:bg-rose-600';
-  const miniRadar = radarMiniSVG(params, 64);
+  const miniRadar = radarMiniSVG(params, 80);
+  const attrString = [draggable ? 'draggable="true"' : '', ...dataAttrs].filter(Boolean).join(' ');
 
   return `
     <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm hover:shadow transition"
-         ${draggable ? 'draggable="true"' : ''} data-drag-id="${p.id}">
+         ${attrString}>
       <div class="flex items-center justify-between gap-3">
         <div class="flex items-center gap-3">
-          <div class="flex flex-col items-center gap-2 w-16 shrink-0">
-            <div class="text-3xl font-bold leading-none text-slate-900">${mediaInt}</div>
-            <div class="w-14 h-14">${miniRadar || ''}</div>
+          <div class="relative w-20 h-20 shrink-0">
+            <div class="absolute inset-0">${miniRadar || ''}</div>
+            <div class="absolute inset-0 flex items-center justify-center">
+              <span class="text-2xl font-semibold text-slate-900 leading-none">${mediaInt}</span>
+            </div>
           </div>
           <div class="min-w-0">
             <p class="text-sm font-semibold text-slate-900 truncate">${name || 'Sin nombre'}</p>
@@ -950,7 +1113,10 @@ async function syncPlayersFromSupabase(options = {}){
     }
     const remoteIds = new Set(remotePlayers.map(p=>p.id));
     state.players = remotePlayers;
+    ensureTeamArrays();
     state.apuntados = state.apuntados.filter(id => remoteIds.has(id));
+    state.teamAIds = state.teamAIds.filter(id => remoteIds.has(id));
+    state.teamBIds = state.teamBIds.filter(id => remoteIds.has(id));
     saveState();
     renderAll();
   } catch (err) {
@@ -1061,7 +1227,8 @@ function renderApuntados(){
   });
 }
 
-function renderTeams(a=[],b=[]){
+function renderTeams(){
+  ensureTeamArrays();
   const teamAEl=document.getElementById('teamA');
   const teamBEl=document.getElementById('teamB');
   const sumAEl=document.getElementById('sumA');
@@ -1071,10 +1238,73 @@ function renderTeams(a=[],b=[]){
   const balanceInfo=document.getElementById('balanceInfo');
   const teamARadarEl=document.getElementById('teamARadar');
   const teamBRadarEl=document.getElementById('teamBRadar');
+  const comparisonRadarEl=document.getElementById('comparisonRadar');
+  const comparisonLegendEl=document.getElementById('comparisonLegend');
+  const comparisonNoteEl=document.getElementById('comparisonNote');
 
-  const cardTeam = (p)=> playerCard(p,{context:'team'});
-  teamAEl.innerHTML = a.map(cardTeam).join('');
-  teamBEl.innerHTML = b.map(cardTeam).join('');
+  const teamAPlayers = playersFromIds(state.teamAIds);
+  const teamBPlayers = playersFromIds(state.teamBIds);
+  const arraysDiffer = (arr1=[], arr2=[])=>{
+    if(arr1.length !== arr2.length) return true;
+    for(let i=0;i<arr1.length;i++){
+      if(arr1[i] !== arr2[i]) return true;
+    }
+    return false;
+  };
+  const normalizedAIds = teamAPlayers.map(p=>p.id);
+  const normalizedBIds = teamBPlayers.map(p=>p.id);
+  let teamsNormalized = false;
+  if(arraysDiffer(state.teamAIds, normalizedAIds)){
+    state.teamAIds = normalizedAIds;
+    teamsNormalized = true;
+  }
+  if(arraysDiffer(state.teamBIds, normalizedBIds)){
+    state.teamBIds = normalizedBIds;
+    teamsNormalized = true;
+  }
+  if(teamsNormalized) saveState();
+
+  const cardTeamA = (p)=> playerCard(p,{context:'team', team:'A'});
+  const cardTeamB = (p)=> playerCard(p,{context:'team', team:'B'});
+
+  if(teamAEl) teamAEl.innerHTML = teamAPlayers.map(cardTeamA).join('');
+  if(teamBEl) teamBEl.innerHTML = teamBPlayers.map(cardTeamB).join('');
+
+  const attachTeamDraggables = (container, teamLabel)=>{
+    if(!container) return;
+    container.querySelectorAll('[data-drag-id]').forEach(el=>{
+      el.addEventListener('dragstart',(ev)=>{
+        ev.dataTransfer.setData('text/plain', el.dataset.dragId);
+        ev.dataTransfer.setData('team-source', teamLabel);
+        ev.dataTransfer.effectAllowed = 'move';
+      });
+    });
+  };
+
+  const setupTeamDropZone = (container, teamLabel)=>{
+    if(!container) return;
+    container.ondragover = (e)=>{
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      container.classList.add('ring-2','ring-emerald-400');
+    };
+    container.ondragleave = (e)=>{
+      if(!container.contains(e.relatedTarget)){
+        container.classList.remove('ring-2','ring-emerald-400');
+      }
+    };
+    container.ondrop = (e)=>{
+      e.preventDefault();
+      container.classList.remove('ring-2','ring-emerald-400');
+      const id = e.dataTransfer.getData('text/plain');
+      if(id) movePlayerToTeam(id, teamLabel);
+    };
+  };
+
+  attachTeamDraggables(teamAEl, 'A');
+  attachTeamDraggables(teamBEl, 'B');
+  setupTeamDropZone(teamAEl, 'A');
+  setupTeamDropZone(teamBEl, 'B');
 
   const renderTeamRadar = (el, players)=>{
     if(!el) return;
@@ -1089,48 +1319,85 @@ function renderTeams(a=[],b=[]){
       el.removeAttribute('title');
     }
   };
-  renderTeamRadar(teamARadarEl, a);
-  renderTeamRadar(teamBRadarEl, b);
+  renderTeamRadar(teamARadarEl, teamAPlayers);
+  renderTeamRadar(teamBRadarEl, teamBPlayers);
 
-  const balance = balanceMetrics(a, b);
+  const balance = balanceMetrics(teamAPlayers, teamBPlayers);
   const avgScoreA = balance.averages.a.skill;
   const avgScoreB = balance.averages.b.skill;
   const avgPesoA = balance.averages.a.peso;
   const avgPesoB = balance.averages.b.peso;
   const avgAlturaA = balance.averages.a.altura;
   const avgAlturaB = balance.averages.b.altura;
-  const avgAgeA = averagePositive(a.map(p=> ageFromYear(p.nacimiento)));
-  const avgAgeB = averagePositive(b.map(p=> ageFromYear(p.nacimiento)));
+  const avgAgeA = averagePositive(teamAPlayers.map(p=> ageFromYear(p.nacimiento)));
+  const avgAgeB = averagePositive(teamBPlayers.map(p=> ageFromYear(p.nacimiento)));
+  const avgParamsA = averageParams(teamAPlayers);
+  const avgParamsB = averageParams(teamBPlayers);
 
-  const statsHtml = (count, avgScore, avgPeso, avgAltura)=>{
-    if(!count) return `<span class="text-sm text-slate-400">Sin jugadores</span>`;
-    const pesoText = avgPeso!=null ? `${avgPeso.toFixed(1)} kg` : '—';
-    const alturaText = avgAltura!=null ? `${avgAltura.toFixed(1)} cm` : '—';
-    return `
-      <span class="text-3xl font-bold text-slate-900 leading-none">⭐ ${avgScore.toFixed(1)}</span>
-      <span class="text-xs uppercase tracking-[0.2em] text-slate-500">Peso ${pesoText}</span>
-      <span class="text-xs uppercase tracking-[0.2em] text-slate-500">Altura ${alturaText}</span>
-    `;
+  const statsHtml = (players, metrics)=>{
+    if(!players.length) return `<span class="text-sm text-slate-400">Sin jugadores</span>`;
+    const metricBlock = (label, value, unit, color)=>{
+      const hasValue = Number.isFinite(value);
+      const colorAttr = (color && hasValue) ? ` style="color:${color}"` : '';
+      const valueText = hasValue ? value.toFixed(1) : '—';
+      const unitSpan = (unit && hasValue) ? `<span class="ml-1 text-[10px] uppercase tracking-[0.25em] text-slate-400">${unit}</span>` : '';
+      return `
+        <div class="flex flex-col items-start">
+          <span class="flex items-baseline gap-1">
+            <span class="text-2xl font-semibold leading-none text-slate-900"${colorAttr}>${valueText}</span>
+            ${unitSpan}
+          </span>
+          <span class="text-sm font-semibold text-slate-900">${label}</span>
+        </div>
+      `;
+    };
+    const levelColorValue = Number.isFinite(metrics.level) ? levelColor(metrics.level) : null;
+    const blocks = [
+      metricBlock('Nivel medio', metrics.level, '', levelColorValue),
+      metricBlock('Peso medio', metrics.peso, 'kg', '#0284c7'),
+      metricBlock('Altura media', metrics.altura, 'cm', '#7c3aed'),
+      metricBlock('Edad media', metrics.edad, 'años', '#d97706')
+    ];
+    return `<div class="flex flex-wrap items-end gap-x-6 gap-y-3">${blocks.join('')}</div>`;
   };
 
-  if(teamAStatsEl) teamAStatsEl.innerHTML = statsHtml(a.length, avgScoreA, avgPesoA, avgAlturaA);
-  if(teamBStatsEl) teamBStatsEl.innerHTML = statsHtml(b.length, avgScoreB, avgPesoB, avgAlturaB);
+  if(teamAStatsEl) teamAStatsEl.innerHTML = statsHtml(teamAPlayers, { level: avgScoreA, peso: avgPesoA, altura: avgAlturaA, edad: avgAgeA });
+  if(teamBStatsEl) teamBStatsEl.innerHTML = statsHtml(teamBPlayers, { level: avgScoreB, peso: avgPesoB, altura: avgAlturaB, edad: avgAgeB });
 
   const ageText = (avgAge)=>{
     if(avgAge==null) return 'Edad media sin datos';
     return `Edad media ${avgAge.toFixed(1)} años`;
   };
-  sumAEl.textContent = a.length ? ageText(avgAgeA) : '';
-  sumBEl.textContent = b.length ? ageText(avgAgeB) : '';
+  if(sumAEl) sumAEl.textContent = teamAPlayers.length ? `${teamAPlayers.length} jugadores · ${ageText(avgAgeA)}` : '';
+  if(sumBEl) sumBEl.textContent = teamBPlayers.length ? `${teamBPlayers.length} jugadores · ${ageText(avgAgeB)}` : '';
 
   if (balanceInfo) {
-    if (a.length && b.length) {
+    if (teamAPlayers.length && teamBPlayers.length) {
       const parts = [`⭐ ${balance.detail.skill.toFixed(2)}`];
       if (balance.detail.peso != null) parts.push(`Peso ${balance.detail.peso.toFixed(2)} kg`);
       if (balance.detail.altura != null) parts.push(`Altura ${balance.detail.altura.toFixed(2)} cm`);
       balanceInfo.textContent = `Diferencias medias → ${parts.join(' | ')}`;
     } else {
       balanceInfo.textContent = '';
+    }
+  }
+
+  if (comparisonRadarEl) {
+    if (teamAPlayers.length && teamBPlayers.length && avgParamsA && avgParamsB) {
+      comparisonRadarEl.innerHTML = radarOverlaySVG(avgParamsA, avgParamsB, 280);
+      if (comparisonLegendEl) {
+        comparisonLegendEl.innerHTML = `
+          <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-[#2563eb]"></span>Blanco</span>
+          <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-[#f97316]"></span>Peto</span>
+        `;
+      }
+      if (comparisonNoteEl) {
+        comparisonNoteEl.textContent = 'Comparativa de medias técnicas (0–100) superpuestas: disparo, técnica, velocidad, resistencia, sacrificio y físico.';
+      }
+    } else {
+      comparisonRadarEl.innerHTML = '<div class="text-sm text-slate-400 text-center">Genera ambos equipos para comparar sus perfiles.</div>';
+      if (comparisonLegendEl) comparisonLegendEl.innerHTML = '';
+      if (comparisonNoteEl) comparisonNoteEl.textContent = '';
     }
   }
 }
@@ -1183,7 +1450,7 @@ shuffleBtn.addEventListener('click',()=> makeTeams(Date.now()));
 function makeTeams(seed=null){
   const selected=state.apuntados.map(id=> state.players.find(p=>p.id===id)).filter(Boolean);
   if(selected.length!==10){ alert('Debes tener exactamente 10 apuntados para crear 2 equipos de 5.'); return; }
-  const players=selected.slice(); let best=null, bestDiff=Infinity; const tries=1024;
+  const players=selected.slice(); let bestCandidates=[]; let bestDiff=Infinity; const tries=1024;
   const rnd=(s)=>{ let x=s||Date.now(); return ()=> (x^=x<<13, x^=x>>>17, x^=x<<5, (x>>>0)/0xFFFFFFFF); };
   for(let i=0;i<tries;i++){
     const randomSeed = (seed||state.lastSeed)+i;
@@ -1198,17 +1465,34 @@ function makeTeams(seed=null){
     for(const p of arr){
       if(teamA.length>=5){ teamB.push(p); continue; }
       if(teamB.length>=5){ teamA.push(p); continue; }
-      const diffIfA = balanceMetrics([...teamA, p], teamB).total;
-      const diffIfB = balanceMetrics(teamA, [...teamB, p]).total;
+      const diffIfA = teamSkillDiff([...teamA, p], teamB);
+      const diffIfB = teamSkillDiff(teamA, [...teamB, p]);
       if(diffIfA<=diffIfB){ teamA.push(p); }
       else { teamB.push(p); }
     }
-    const diff=balanceMetrics(teamA, teamB).total;
-    if(diff<bestDiff){ bestDiff=diff; best={a:teamA, b:teamB}; if(bestDiff<0.01) break; }
+    const diff=teamSkillDiff(teamA, teamB);
+    if(diff < bestDiff - 1e-6){
+      bestDiff = diff;
+      bestCandidates = [{ a: [...teamA], b: [...teamB] }];
+    } else if (Math.abs(diff - bestDiff) <= TEAM_BALANCE_TOLERANCE){
+      bestCandidates.push({ a: [...teamA], b: [...teamB] });
+    }
+    if(bestDiff<0.01) break;
   }
-  state.lastSeed=(state.lastSeed+7919)%1_000_000_007; saveState();
-  if(best){ renderTeams(best.a,best.b); }
-  else { renderTeams(players.slice(0,5), players.slice(5,10)); }
+  state.lastSeed=(state.lastSeed+7919)%1_000_000_007;
+  let chosen = null;
+  if(bestCandidates.length){
+    chosen = bestCandidates[Math.floor(Math.random()*bestCandidates.length)] || bestCandidates[0];
+  } else {
+    chosen = {
+      a: players.slice(0,5),
+      b: players.slice(5,10)
+    };
+  }
+  state.teamAIds = chosen.a.map(p=>p.id);
+  state.teamBIds = chosen.b.map(p=>p.id);
+  saveState();
+  renderTeams();
 }
 
 /* ---------- Init ---------- */
